@@ -24,7 +24,10 @@ const db = require('../database/db');
 // =============================================================================
 const adminAuthMiddleware = (req, res, next) => {
     const cookies = req.headers.cookie || '';
-    if (cookies.includes('exambro_admin_auth=true')) {
+    // Regex memastikan exact match pada key dan value cookie.
+    // Mencegah bypass via substring seperti 'fake_exambro_admin_auth=true'.
+    const match = cookies.match(/(^|;)\s*exambro_admin_auth\s*=\s*true\s*(;|$)/);
+    if (match) {
         return next();
     }
     return res.redirect('/login');

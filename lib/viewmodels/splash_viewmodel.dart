@@ -67,6 +67,10 @@ class SplashViewModel extends ChangeNotifier {
     notifyListeners();
   }
 
+  // RESERVED FOR FUTURE USE (PHASE 2 — OTA FORCE UPDATE FLOW)
+  // Dipanggil saat pengawas menekan "Refresh Config" setelah server OTA push konfigurasi baru.
+  // Saat ini tidak ada pemanggilan aktif — tetap dipertahankan sebagai API publik.
+
   /// Reset state ke initial — digunakan jika perlu menjalankan checkConfiguration()
   /// kembali (misalnya setelah pengawas mengisi konfigurasi).
   void reset() {

@@ -2,7 +2,7 @@
 // File        : security_helper.dart
 // Fungsi Utama: Service keamanan native Android (FLAG_SECURE + Kiosk Mode)
 //               dan iOS (Guided Access Detection via MethodChannel).
-// Tanggal     : 27 Februari 2026
+// Tanggal     : 27 Februari 2026 | Update Kiosk: 01 Maret 2026
 // PRD Section : Section 6.1, Section 11.2
 // KRITIS      : Android → WAJIB Platform.isAndroid guard.
 //               iOS     → WAJIB Platform.isIOS guard.
@@ -13,7 +13,6 @@ import 'dart:io' show Platform;
 
 import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:flutter/services.dart';
-import 'package:kiosk_mode/kiosk_mode.dart';
 
 /// Singleton service untuk lockdown keamanan native (Android + iOS).
 ///
@@ -35,12 +34,13 @@ class SecurityHelper {
   SecurityHelper._internal();
 
   // ---------------------------------------------------------------------------
-  // CONSTANTS — MethodChannel iOS
+  // CONSTANTS — MethodChannels
   // ---------------------------------------------------------------------------
 
-  /// Channel name WAJIB identik dengan yang didaftarkan di AppDelegate.swift
-  static const MethodChannel _iosSecurityChannel = MethodChannel(
-    'com.sman4jember.exambro/security',
+  /// Channel kiosk mode Android + iOS Guided Access — channel tunggal terpadu.
+  /// WAJIB identik dengan: MainActivity.kt (KIOSK_CHANNEL) & AppDelegate.swift.
+  static const MethodChannel _kioskChannel = MethodChannel(
+    'id.sman4jember.exambro/kiosk',
   );
 
   // ---------------------------------------------------------------------------
@@ -50,21 +50,35 @@ class SecurityHelper {
   /// Mengaktifkan lockdown penuh pada Android sebelum soal ujian ditampilkan.
   ///
   /// Urutan PRD Section 6.1:
-  ///   1. FLAG_SECURE — layar tidak bisa di-screenshot atau di-screen-record
-  ///   2. startKioskMode() — App Pinning aktif (siswa tidak bisa keluar aplikasi)
+  ///   1. FLAG_SECURE — sudah aktif sejak onCreate() di MainActivity.kt
+  ///   2. enableKioskMode via MethodChannel → startLockTask() native
   ///
   /// KRITIS: HANYA dieksekusi di Android (Platform.isAndroid guard).
-  ///         Jika bukan Android, langsung return tanpa efek.
   Future<void> enableAndroidLockdown() async {
     if (!Platform.isAndroid) return;
 
-    // FLAG_SECURE sudah diaktifkan di MainActivity.kt via native Android API
-    // (WindowManager.LayoutParams.FLAG_SECURE di onCreate).
-    // Tidak perlu memanggil FlutterWindowManager — flutter_windowmanager v0.2.0
-    // tidak kompatibel dengan Flutter v2 Embedding (error Registrar).
+    // FLAG_SECURE sudah diaktifkan di MainActivity.kt onCreate() — tidak perlu diulang.
 
-    // Aktifkan Kiosk Mode (App Pinning) — siswa tidak bisa pindah ke aplikasi lain
-    await startKioskMode();
+    // Aktifkan App Pinning (Screen Pinning) via MethodChannel → startLockTask() native
+    try {
+      await _kioskChannel.invokeMethod<void>('enableKioskMode');
+      debugPrint('[SECURITY] Kiosk Mode AKTIF (startLockTask dipanggil).');
+    } on PlatformException catch (e) {
+      // PlatformException tidak boleh crash app — cukup log dan lanjut
+      debugPrint('[SECURITY] enableKioskMode PlatformException: ${e.message}');
+    } catch (e) {
+      debugPrint('[SECURITY] enableKioskMode error: $e');
+    }
+
+    // Minta whitelist dari Battery Optimization OS (MIUI/HyperOS/ColorOS).
+    // Hanya tampil sekali jika belum diizinkan — idempotent (tidak spam dialog).
+    try {
+      await _kioskChannel.invokeMethod<void>('requestBatteryExemption');
+      debugPrint('[SECURITY] Battery Exemption diminta ke OS.');
+    } catch (e) {
+      // iOS / emulator tidak punya PowerManager — abaikan tanpa crash
+      debugPrint('[SECURITY] requestBatteryExemption tidak tersedia: $e');
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -80,11 +94,15 @@ class SecurityHelper {
   Future<void> disableAndroidLockdown() async {
     if (!Platform.isAndroid) return;
 
-    // FLAG_SECURE dinonaktifkan di native Android pada saat Activity selesai.
-    // Tidak perlu clearFlags dari Dart — MainActivity.kt yang mengelolanya.
-
-    // Matikan Kiosk Mode — siswa kembali bisa mengakses aplikasi lain
-    await stopKioskMode();
+    // Nonaktifkan App Pinning via MethodChannel → stopLockTask() native
+    try {
+      await _kioskChannel.invokeMethod<void>('disableKioskMode');
+      debugPrint('[SECURITY] Kiosk Mode NONAKTIF (stopLockTask dipanggil).');
+    } on PlatformException catch (e) {
+      debugPrint('[SECURITY] disableKioskMode PlatformException: ${e.message}');
+    } catch (e) {
+      debugPrint('[SECURITY] disableKioskMode error: $e');
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -93,8 +111,8 @@ class SecurityHelper {
 
   /// Mengecek apakah Guided Access sudah diaktifkan di iPhone/iPad.
   ///
-  /// Menggunakan MethodChannel 'com.sman4jember.exambro/security'
-  /// untuk memanggil UIAccessibility.isGuidedAccessEnabled via Swift.
+  /// Menggunakan `_kioskChannel` (channel terpadu) — method "isGuidedAccessEnabled".
+  /// Didaftarkan di AppDelegate.swift → UIAccessibility.isGuidedAccessEnabled.
   ///
   /// Return value:
   ///   - true  → Guided Access AKTIF → WebView Moodle boleh dimuat
@@ -106,8 +124,8 @@ class SecurityHelper {
     if (!Platform.isIOS) return true;
 
     try {
-      final bool? result = await _iosSecurityChannel.invokeMethod<bool>(
-        'checkGuidedAccess',
+      final bool? result = await _kioskChannel.invokeMethod<bool>(
+        'isGuidedAccessEnabled',
       );
       return result ?? false; // null-safe: anggap false jika respons null
     } on PlatformException catch (e) {

@@ -27,6 +27,9 @@ dependencies:
   # Baterai — indikator level baterai di Custom Exam Header Bar
   battery_plus: ^6.0.3
 
+  # Wakelock — mencegah layar mati (sleep) selama sesi ujian berlangsung
+  wakelock_plus: ^1.2.8
+
   # HTTP client — request validasi token ke backend
   http: ^1.1.0
 
@@ -34,19 +37,9 @@ dependencies:
   # CATATAN: flutter_windowmanager dihapus — tidak kompatibel dengan v2 Flutter Embedding.
   # FLAG_SECURE kini diimplementasikan native di MainActivity.kt (onCreate).
 
-  # Android: App Pinning / kiosk mode
-  kiosk_mode: ^0.2.0
-
-  # iOS: deteksi status Guided Access
-  # CATATAN PRD Section 11.2: Package 'guided_access' tidak tersedia di pub.dev.
-  # Akan diimplementasikan via iOS Platform Channel (UIAccessibility.isGuidedAccessEnabled)
-  # pada Prioritas 9. Tidak ada dependency tambahan yang dibutuhkan.
-
   # Hashing SHA-256 untuk PIN admin (DILARANG simpan plain text)
   crypto: ^3.0.3
 
-  # Format tanggal/waktu
-  intl: ^0.18.1
 
 dev_dependencies:
   flutter_test:

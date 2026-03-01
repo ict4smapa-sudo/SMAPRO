@@ -14,7 +14,6 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
@@ -22,6 +21,7 @@ import '../services/api_client.dart';
 import '../services/local_storage_service.dart';
 import '../services/logger_service.dart';
 import '../utils/constants.dart';
+import '../utils/crypto_helper.dart';
 
 // =============================================================================
 // ENUM: State manajemen Token Submission
@@ -128,11 +128,15 @@ class LoginViewModel extends ChangeNotifier {
           _logger.log('submitToken: moodleUrl dari server disimpan ke storage');
         }
         if (response.adminPin != null && response.adminPin!.isNotEmpty) {
-          await _storage.setAdminPinHash(_hashPin(response.adminPin!));
+          await _storage.setAdminPinHash(
+            CryptoHelper.hashPin(response.adminPin!),
+          );
           // DILARANG log plain text PIN
         }
         if (response.exitPin != null && response.exitPin!.isNotEmpty) {
-          await _storage.setExitPinHash(_hashPin(response.exitPin!));
+          await _storage.setExitPinHash(
+            CryptoHelper.hashPin(response.exitPin!),
+          );
         }
 
         _logger.log(
@@ -233,11 +237,11 @@ class LoginViewModel extends ChangeNotifier {
   /// Fallback: jika hash belum ada → bandingkan dengan hash '123456'.
   Future<bool> verifyAdminPin(String inputPin) async {
     try {
-      final inputHash = _hashPin(inputPin);
+      final inputHash = CryptoHelper.hashPin(inputPin);
       final storedHash = _storage.getAdminPinHash();
 
       if (storedHash == null || storedHash.isEmpty) {
-        return inputHash == _hashPin('123456');
+        return inputHash == CryptoHelper.hashPin('123456');
       }
       return inputHash == storedHash;
     } catch (e) {
@@ -260,8 +264,10 @@ class LoginViewModel extends ChangeNotifier {
     // -------------------------------------------------------------------------
     try {
       final apiUrl = _storage.getApiValidateUrl();
-      // Ganti /validate dengan /verify-exit untuk endpoint baru
-      final exitUrl = apiUrl.replaceAll('/validate', '/verify-exit');
+      // Konstruksi exitUrl secara absolut dari base URL.
+      // Lebih aman dari replaceAll() yang bergantung pada format string tertentu.
+      final baseUrl = apiUrl.substring(0, apiUrl.lastIndexOf('/'));
+      final exitUrl = '$baseUrl/verify-exit';
 
       final response = await http
           .post(
@@ -279,41 +285,44 @@ class LoginViewModel extends ChangeNotifier {
       }
       // Server merespons tapi hasilnya tidak valid atau format salah
       // Tetap fallback ke lokal agar tidak memblokir
-      _logger.log('[EXIT-PIN] Server response tidak expected, fallback ke lokal', isError: false);
+      _logger.log(
+        '[EXIT-PIN] Server response tidak expected, fallback ke lokal',
+        isError: false,
+      );
     } on SocketException {
-      _logger.log('[EXIT-PIN] SocketException — fallback ke hash lokal', isError: false);
+      _logger.log(
+        '[EXIT-PIN] SocketException — fallback ke hash lokal',
+        isError: false,
+      );
     } on TimeoutException {
-      _logger.log('[EXIT-PIN] Timeout 5s — fallback ke hash lokal', isError: false);
+      _logger.log(
+        '[EXIT-PIN] Timeout 5s — fallback ke hash lokal',
+        isError: false,
+      );
     } catch (e) {
-      _logger.log('[EXIT-PIN] Error tidak terduga: ${e.runtimeType} — fallback', isError: true);
+      _logger.log(
+        '[EXIT-PIN] Error tidak terduga: ${e.runtimeType} — fallback',
+        isError: true,
+      );
     }
 
     // -------------------------------------------------------------------------
     // FALLBACK: Verifikasi lokal via SHA-256 (offline / server down)
     // -------------------------------------------------------------------------
     try {
-      final inputHash = _hashPin(inputPin);
+      final inputHash = CryptoHelper.hashPin(inputPin);
       final storedHash = _storage.getExitPinHash();
       if (storedHash == null || storedHash.isEmpty) {
-        return inputHash == _hashPin('123456');
+        return inputHash == CryptoHelper.hashPin('123456');
       }
       return inputHash == storedHash;
     } catch (e) {
-      _logger.log('verifyExitPin fallback error: ${e.runtimeType}', isError: true);
+      _logger.log(
+        'verifyExitPin fallback error: ${e.runtimeType}',
+        isError: true,
+      );
       return false;
     }
-  }
-
-  // ---------------------------------------------------------------------------
-  // PRIVATE HELPERS
-  // ---------------------------------------------------------------------------
-
-  /// Menghasilkan SHA-256 hex string dari [pin].
-  /// DILARANG memanggil method ini untuk tujuan selain autentikasi.
-  String _hashPin(String pin) {
-    final bytes = utf8.encode(pin);
-    final digest = sha256.convert(bytes);
-    return digest.toString();
   }
 
   // ---------------------------------------------------------------------------

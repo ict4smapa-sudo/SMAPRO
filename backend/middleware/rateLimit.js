@@ -32,8 +32,8 @@ const tokenValidateLimiter = rateLimit({
         });
     },
 
-    // Skip jika request berasal dari localhost (opsional, untuk testing lokal)
-    // skip: (req) => req.ip === '127.0.0.1' || req.ip === '::1',
+    // Skip jika request berasal dari localhost (untuk testing lokal pengembang)
+    skip: (req) => req.ip === '127.0.0.1' || req.ip === '::1',
 });
 
 module.exports = { tokenValidateLimiter };

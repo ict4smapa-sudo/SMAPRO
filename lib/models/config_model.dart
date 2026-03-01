@@ -10,6 +10,11 @@
 //               ConfigModel disediakan sebagai data class yang valid dan bersih.
 // =============================================================================
 
+// RESERVED FOR FUTURE USE (PHASE 2 — OTA CONFIG UPDATES)
+// Class ini saat ini tidak diinstansiasi secara langsung karena ViewModel mengakses
+// LocalStorageService secara langsung. Di Phase 2, class ini akan menjadi pondasi
+// untuk deserialisasi remote config dari endpoint /api/config OTA.
+
 /// Model data konfigurasi server lokal Exambro.
 ///
 /// Field:

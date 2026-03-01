@@ -1,4 +1,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Mencegah OS (MIUI/HyperOS/ColorOS) mematikan paksa proses WebView ujian -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS"/>
+
     <application
         android:label="Exambro SMAN 4 Jember"
         android:name="${applicationName}"

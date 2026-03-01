@@ -17,6 +17,7 @@ import 'package:battery_plus/battery_plus.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
 import '../utils/colors.dart';
@@ -46,12 +47,22 @@ class _ExamScreenState extends State<ExamScreen> {
   @override
   void initState() {
     super.initState();
+    // Wakelock: cegah layar mati selama sesi ujian berlangsung.
+    WakelockPlus.enable();
     // Anti-Copy-Paste: kosongkan clipboard saat layar ujian dibuka.
     // Mencegah siswa mempaste teks dari luar aplikasi ke dalam WebView.
     Clipboard.setData(const ClipboardData(text: ''));
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<ExamViewModel>().initWebView();
     });
+  }
+
+  @override
+  void dispose() {
+    // Kembalikan pengaturan layar ke normal saat ExamScreen di-unmount.
+    // Dipanggil baik saat exit normal (PIN) maupun edge-case teardown.
+    WakelockPlus.disable();
+    super.dispose();
   }
 
   // ---------------------------------------------------------------------------
@@ -304,8 +315,8 @@ class _ExamHeaderBarState extends State<ExamHeaderBar> {
   // ---------------------------------------------------------------------------
 
   final Battery _battery = Battery();
-  late String _timeString;
-  int _batteryLevel = 100;
+  final ValueNotifier<String> _currentTime = ValueNotifier<String>('');
+  final ValueNotifier<int> _batteryLevel = ValueNotifier<int>(100);
   BatteryState _batteryState = BatteryState.full;
   Timer? _timer;
   StreamSubscription<BatteryState>? _batterySub;
@@ -317,20 +328,18 @@ class _ExamHeaderBarState extends State<ExamHeaderBar> {
   @override
   void initState() {
     super.initState();
-    _timeString = _formatTime(DateTime.now());
+    _currentTime.value = _formatTime(DateTime.now());
     _updateBattery();
 
-    // Update jam setiap 30 detik
+    // Update jam setiap 30 detik — tidak ada setState, hanya update value
     _timer = Timer.periodic(const Duration(seconds: 30), (_) {
-      if (mounted) setState(() => _timeString = _formatTime(DateTime.now()));
+      _currentTime.value = _formatTime(DateTime.now());
     });
 
-    // Subscribe ke perubahan status baterai
+    // Subscribe ke perubahan status baterai — tidak ada setState
     _batterySub = _battery.onBatteryStateChanged.listen((state) {
-      if (mounted) {
-        setState(() => _batteryState = state);
-        _updateBattery();
-      }
+      _batteryState = state;
+      _updateBattery();
     });
   }
 
@@ -338,6 +347,8 @@ class _ExamHeaderBarState extends State<ExamHeaderBar> {
   void dispose() {
     _timer?.cancel();
     _batterySub?.cancel();
+    _currentTime.dispose();
+    _batteryLevel.dispose();
     super.dispose();
   }
 
@@ -354,28 +365,28 @@ class _ExamHeaderBarState extends State<ExamHeaderBar> {
   Future<void> _updateBattery() async {
     try {
       final level = await _battery.batteryLevel;
-      if (mounted) setState(() => _batteryLevel = level);
+      _batteryLevel.value = level;
     } catch (_) {
       // Abaikan error pada emulator (tidak punya baterai fisik)
     }
   }
 
-  IconData _batteryIcon() {
+  IconData _batteryIcon(int level) {
     if (_batteryState == BatteryState.charging ||
         _batteryState == BatteryState.connectedNotCharging) {
       return Icons.battery_charging_full_rounded;
     }
-    if (_batteryLevel >= 90) return Icons.battery_full_rounded;
-    if (_batteryLevel >= 60) return Icons.battery_5_bar_rounded;
-    if (_batteryLevel >= 40) return Icons.battery_4_bar_rounded;
-    if (_batteryLevel >= 20) return Icons.battery_2_bar_rounded;
+    if (level >= 90) return Icons.battery_full_rounded;
+    if (level >= 60) return Icons.battery_5_bar_rounded;
+    if (level >= 40) return Icons.battery_4_bar_rounded;
+    if (level >= 20) return Icons.battery_2_bar_rounded;
     return Icons.battery_1_bar_rounded;
   }
 
-  Color _batteryColor() {
+  Color _batteryColor(int level) {
     if (_batteryState == BatteryState.charging) return Colors.greenAccent;
-    if (_batteryLevel <= 15) return AppColors.snackError;
-    if (_batteryLevel <= 30) return Colors.orange;
+    if (level <= 15) return AppColors.snackError;
+    if (level <= 30) return Colors.orange;
     return AppColors.textSecondary;
   }
 
@@ -417,29 +428,51 @@ class _ExamHeaderBarState extends State<ExamHeaderBar> {
           ),
 
           // ── TENGAH: Jam + Baterai ──────────────────────────────────────────
+          // Hanya komponen teks jam & angka baterai yang rebuild (bukan seluruh Row).
           Expanded(
             child: Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Text(
-                  _timeString,
-                  style: const TextStyle(
-                    color: AppColors.textPrimary,
-                    fontSize: 15,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: 1.2,
-                  ),
+                // Hanya widget Text jam yang di-rebuild oleh ValueNotifier jam
+                ValueListenableBuilder<String>(
+                  valueListenable: _currentTime,
+                  builder: (context, timeString, child) {
+                    return Text(
+                      timeString,
+                      style: const TextStyle(
+                        color: AppColors.textPrimary,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 1.2,
+                      ),
+                    );
+                  },
                 ),
                 const SizedBox(width: 14),
-                Icon(_batteryIcon(), color: _batteryColor(), size: 18),
-                const SizedBox(width: 4),
-                Text(
-                  '$_batteryLevel%',
-                  style: TextStyle(
-                    color: _batteryColor(),
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                  ),
+                // Hanya Icon + Text baterai yang di-rebuild oleh ValueNotifier level
+                ValueListenableBuilder<int>(
+                  valueListenable: _batteryLevel,
+                  builder: (context, level, child) {
+                    return Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          _batteryIcon(level),
+                          color: _batteryColor(level),
+                          size: 18,
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          '$level%',
+                          style: TextStyle(
+                            color: _batteryColor(level),
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    );
+                  },
                 ),
               ],
             ),

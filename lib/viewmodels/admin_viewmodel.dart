@@ -10,13 +10,11 @@
 //               KRITIS: PIN TIDAK BOLEH disimpan atau dilog dalam plain text.
 // =============================================================================
 
-import 'dart:convert';
-
-import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 
 import '../services/local_storage_service.dart';
 import '../services/logger_service.dart';
+import '../utils/crypto_helper.dart';
 
 // =============================================================================
 // ENUM: Hasil operasi simpan konfigurasi
@@ -156,7 +154,7 @@ class AdminViewModel extends ChangeNotifier {
     // PRD KRITIS: DILARANG simpan plain text — wajib SHA-256 dulu.
     // -------------------------------------------------------------------------
     if (newPin.trim().isNotEmpty) {
-      final pinHash = _hashPin(newPin.trim());
+      final pinHash = CryptoHelper.hashPin(newPin.trim());
       await _storage.setAdminPinHash(pinHash);
     }
     // Jika newPin kosong → hash PIN lama di SharedPreferences TIDAK diubah.
@@ -197,11 +195,5 @@ class AdminViewModel extends ChangeNotifier {
     return url;
   }
 
-  /// Menghasilkan SHA-256 hex string dari [pin].
-  /// DILARANG memanggil method ini untuk tujuan selain autentikasi/penyimpanan.
-  String _hashPin(String pin) {
-    final bytes = utf8.encode(pin);
-    final digest = sha256.convert(bytes);
-    return digest.toString();
-  }
+  // Hashing: gunakan CryptoHelper.hashPin() — dipindahkan ke crypto_helper.dart (DRY fix W-06)
 }

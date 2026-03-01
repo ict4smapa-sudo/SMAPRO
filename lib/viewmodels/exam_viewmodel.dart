@@ -254,6 +254,33 @@ class ExamViewModel extends ChangeNotifier {
           debugPrint(
             '[WEBVIEW] Error: ${error.description} (code: ${error.errorCode})',
           );
+
+          // -----------------------------------------------------------------
+          // GRACEFUL ERROR HANDLING — PRD Network Error
+          // Hanya tangkap error di main frame (bukan sub-resource seperti
+          // gambar atau script yang gagal dimuat di iframe).
+          // Error sub-frame diabaikan agar tidak spam SnackBar.
+          // -----------------------------------------------------------------
+          if (error.isForMainFrame != true) return;
+
+          // Kode error jaringan standar Android WebView (WebViewClient):
+          //   -2  → ERROR_HOST_LOOKUP (DNS gagal / Wi-Fi putus)
+          //   -6  → ERROR_CONNECT (koneksi ditolak / server mati)
+          //   -8  → ERROR_TIMEOUT (koneksi timeout)
+          //   -15 → ERROR_FAILED_SSL_HANDSHAKE (SSL error)
+          const networkErrorCodes = [-2, -6, -8, -15];
+          final isNetworkError = networkErrorCodes.contains(error.errorCode);
+
+          if (isNetworkError) {
+            _blockedMessage = 'Koneksi terputus. Silakan tekan tombol Refresh.';
+          } else {
+            // Error non-jaringan (contoh: resource tertentu gagal) —
+            // tampilkan pesan generik agar siswa tahu dan bisa retry.
+            _blockedMessage =
+                'Halaman gagal dimuat (${error.errorCode}). Coba Refresh.';
+          }
+
+          notifyListeners();
         },
       ),
     );

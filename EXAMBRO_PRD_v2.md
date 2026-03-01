@@ -22,6 +22,7 @@ Seluruh konfigurasi inti seperti *Moodle URL*, *Admin PIN*, dan *Exit PIN* diken
 - **State Management:** `provider ^6.1.1` (Arsitektur MVVM - Model View ViewModel diterapkan ketat untuk pemisahan logika dari antarmuka).
 - **Library Kunci:**
   - `webview_flutter ^4.4.4` (Renderer utama Moodle secara fullscreen).
+  - `wakelock_plus ^1.4.0` (Pengelola *screen state* — mencegah layar perangkat *sleep/doze* selama ujian).
   - `battery_plus ^6.0.3` (Indikator level dan status baterai di header ujian realtime).
   - `shared_preferences ^2.2.2` (Local storage untuk konfigurasi fallback: Server IP, Auth Token URL, & hash admin PIN).
   - `http ^1.1.0` (Modul komunikasi klien ke server).
@@ -39,8 +40,9 @@ Seluruh konfigurasi inti seperti *Moodle URL*, *Admin PIN*, dan *Exit PIN* diken
    * Siswa memasukkan Token di `LoginScreen`. Aplikasi mengirimkan POST request ke `/api/validate`.
    * Node.js mencocokkan di tabel `tokens`. Jika valid dan `exam_active=1`, backend membalas HTTP 200 beserta konfigurasi Moodle URL dan PIN admin & exit dari tabel `app_config`.
 3. **Konfigurasi Lokal Sinkron:** Flutter App menyimpan Moodle URL dan PIN tersinkron ke `LocalStorageService` untuk mencegah putusnya sesi saat offline sesaat.
-4. **WebView Render:** State berpindah ke `ExamScreen`. Controller Moodle WebView diload fullscreen memanggil URL Moodle yang diterima dari API. Interaksi WebView terkunci (pop-up diblokir, navigasi diintersep oleh `NavigationDelegate`).
-5. **Session End:** Verifikasi *Exit PIN* via dialog memanggil POST `/api/verify-exit` (Validasi Live/Fallback hash lokal) yang kemudian me-reset cookie, clear clipboard cache, dan me-return siswa ke Login.
+4. **Native Hardware Control:** Menghindari *dependency* eksternal yang rentan batas API, aplikasi memanggil platform channel `id.sman4jember.exambro/kiosk` untuk mengunci OS (*App Pinning* / Guided Access) dan OS diseting *Wakelock* sebelum transisi ke UI.
+5. **WebView Render:** State berpindah ke `ExamScreen`. Controller Moodle WebView diload fullscreen memanggil URL Moodle yang diterima dari API. Interaksi WebView terkunci (pop-up diblokir, navigasi diintersep oleh `NavigationDelegate`).
+6. **Session End & Strict Isolation:** Verifikasi *Exit PIN* via dialog memanggil POST `/api/verify-exit` (Validasi Live/Fallback hash lokal). Setelah *success*, aplikasi menghentikan Kiosk Mode, lalu menjalankan pembersihan 4 Lapis Penuh secara *await* (Cookies Moodle, HTTP Cache, LocalStorage Native, dan Storage JavaScript) untuk jaminan *zero-leak session* sebelum me-return siswa ke Login.
 
 ---
 
@@ -54,7 +56,8 @@ Seluruh konfigurasi inti seperti *Moodle URL*, *Admin PIN*, dan *Exit PIN* diken
 
 ### **Frontend Core Features**
 - **Halaman Login Dinamis:** Memproses input token siswa dan menangani berbagai fallback status dari API (`successNavigate`, `examNotActive`, `tokenInvalid`, `networkError`, `rateLimited`) dan disajikan secara *user-friendly* via SnackBar.
-- **Custom Header Ujian:** Menggantikan status bar native OS. Memiliki indikator jam *real-time*, status baterai presisi, kontrol relasi navigasi (Back, Forward, Refresh WebView), serta pemicu dialog keluar. Dibangun di dalam `ExamHeaderBar` (Stateful Widget) independen agar *reboot/re-render* waktu tidak men-trigger build ulang Moodle WebView yang berat.
+- **Custom Header Ujian & Micro-State Management:** Menggantikan status bar native OS. Memiliki indikator jam *real-time*, status baterai presisi, dan kontrol navigasi. Melalui arsitektur *Micro-State* terkini, rebuild keseluruhan UI dicegah dengan pemanfaatan `ValueNotifier` dan `ValueListenableBuilder`. Ini memastikan hanya piksel teks jam dan baterai yang terre-paint setiap detiknya, menghemat drastis siklus CPU/RAM pada gawai *low-end*.
+- **Graceful Error Handling:** Intersepsi kegagalan navigasi secara diam-diam. Jika Moodle Controller menembakkan error `-2` (DNS Down) atau `-6` (Server Mati), aplikasi memblokir UI *"Web Page not Available"* bawaan browser dan memberikan feedback elegan *"Koneksi terputus. Silakan tekan tombol Refresh"* berbentuk SnackBar.
 - **Fallback Storage:** Jika terjadi *network drop* pada akses Live Server Verification, aplikasi secara pasif mendukung validasi PIN secara offline melalui pencocokan kriptografi lokal (*local hash verification*).
 
 ---
@@ -63,10 +66,12 @@ Seluruh konfigurasi inti seperti *Moodle URL*, *Admin PIN*, dan *Exit PIN* diken
 
 Aplikasi ini dipersenjatai dengan fitur *lockdown* dan mitigasi manipulasi yang terintegrasi di berbagai lapisan OS dan framework:
 
-### **Native Android Security**
-- **Anti-Split Screen:** Memanfaatkan flag di `AndroidManifest.xml` (`android:resizeableActivity="false"`). Siswa dilarang keras membuka aplikasi contekan pendamping di sebelah *screen* ujian.
+### **Native OS Security (Android & iOS)**
+- **Native App Pinning (Android):** Kontrol `Kiosk Mode` diimplementasikan murni via jembatan panggilan Kotlin API terendah (`startLockTask()` & `stopLockTask()`) melalui channel `id.sman4jember.exambro/kiosk`. Siswa tidak bisa menekan tombol `Home`, `Recent`, atau `System Back` untuk mensuspend layar utama Moodle.
+- **Guided Access Awareness (iOS):** Deteksi mode ujian perangkat Apple terintegrasi kuat ke dalam Swift `UIAccessibility.isGuidedAccessEnabled` MethodChannel. Siswa iOS diwajibkan menyalakan sakelar akses panduan sebelum layar merender server UNBK.
+- **Screen Wakelock:** Modul yang bekerja sebagai wakil OS mencegah `Sleep`/`Doze` mode atau penggelapan layar. Ini krusial agar memori Chrome `WebView` tidak tertidur dan mengakibatkan terputusnya koneksi Web Socket ke *Node.js Backend* saat ada ujian esai panjang.
 - **Anti-Screenshot / Screen Record:** Deklarasi *native protection* melalui pemanggilan fungsi Kotlin (`window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)`) pada siklus `onCreate` di `MainActivity.kt`. Hal ini mengamankan *preview app* dari mode *Recent Apps*, *Screen casting/Miracast*, maupun pengambilam *Screenshot* OS.
-- **Cleartext Traffic Rule:** Pengaktifan `usesCleartextTraffic="true"` untuk memastikan aplikasi dapat mengakses server sekolah secara lancar via HTTP murni (tanpa SSL) di jaringan *Intranet LAN* tertutup.
+- **Cleartext Traffic Rule (Android):** Pengaktifan `usesCleartextTraffic="true"` untuk memastikan aplikasi dapat mengakses server sekolah secara lancar via HTTP murni (tanpa SSL) di jaringan *Intranet LAN* tertutup.
 
 ### **Flutter / Dart Application Security**
 - **7-Tap Hidden Gesture (Admin Panel):** Perlindungan rute Admin App (bisa mengganti URL Moodle cadangan manual). Hanya bisa diakses apabila logo aplikasi SMAN 4 ditekan persis sebanyak 7 kali dalam tempo 3 detik.
@@ -76,24 +81,20 @@ Aplikasi ini dipersenjatai dengan fitur *lockdown* dan mitigasi manipulasi yang 
 
 ---
 
-## 5. System Audit & Optimization Recommendations
+## 5. Phase 2 Roadmap (Future Enhancements)
 
-Setelah melakukan pemeriksaan *code review* mendalam terhadap *state* dan arsitektur aplikasi (versi 2.0.0+1), berikut adalah rekomendasi tajam guna eskalasi performa dan tata kelola memori:
+Konfigurasi dan kapabilitas CBT saat ini sudah dinyatakan **Pre-Release State (Stable)**. Seluruh rekomendasi performa Fase 1 (Micro-State, Graceful Fallback, dan iOS Native Bridges) telah diakuisisi penuh di *codebase* utama.
+Guna mematangkan daya saing platform dan meningkatkan manajemen terpusat panitia SMAN 4 Jember di masa depan, berikut rancangan 3 target arsitektur spesifik untuk "Iterasi Fase 2":
 
-### **Rekomendasi Optimasi di Sisi Flutter (Dart)**
-1. **Efisiensi Rebuild UI (Pemisahan State Notifier di level micro):** 
-   Meskipun Timer jam dan baterai sudah diekstrak ke dalam widget `ExamHeaderBar`, penggunaan state lokal dinamis via `setState` setiap 30 detik tetap merender ulang keseluruhan header navigation button. **Saran:** Gunakan `ValueNotifier<String>` (untuk Waktu) dan `ValueNotifier<int>` (untuk level Baterai). Sisipkan `ValueListenableBuilder` khusus hanya pada elemen Text saja, menurunkan durasi *paint UI tree* secara drastis saat ujian berjalan.
-2. **Manajemen Memori Reclaimer WebView (OOM Prevention):** 
-   Memuat *instance LMS Moodle* dengan ragam aset (image, JS, form soal) di gawai low-end bisa memicu *Out of Memory (OOM)*. **Saran:** Terapkan pembersihan chache manual di `ExamViewModel`. Lakukan injeksi metode `WebViewController.clearCache()` jika sensor internal Flutter mendeteksi respon sistem OS yang tertahan, mengurangi insiden *app forces closes* di pertengahan ujian.
-3. **Pengelolaan Isolasi Dart (Connection Keep-Alive Pooling):** 
-   Klien Flutter saat ini memutus paksa koneksi (teardown) ke IP Node.js lokal setelah hit `/api/validate`. **Saran:** Pada paket `http`, pergunakan `http.Client()` berbasis *Connection Pooling* singleton persisten untuk menekan beban overhead *TCP Handshake* yang repetitif bila 800 gawai siswa online di titik hotspot yang sama secara simultan.
+1. **Root & Jailbreak Detection (Native Integrity)**: 
+   Pengecekan modifikasi OS level kerucut (*system/bin/su* pada Android dan Cydia injection pada iOS) yang dieksekusi secara asinkron di saat `SplashScreen`. Jika API `SafetyNet` OS mendapati gawai dimodifikasi, UI secara keras akan memberikan banner pemblokiran ujian permanen bagi perangkat yang tidak valid.
 
-### **Rekomendasi Optimasi di Sisi Native (Kotlin / Android)**
-1. **Pengelolaan Daur Hidup Memori WebView (Native Suspension):** 
-   Render Engine Chromium bawaan Android bisa membebani RAM walau aplikasi berada dalam status pasif (*on-stop/backgrounded* akibat ada notifikasi atau panggilan sistem prioritas). **Saran:** Override fungsi siklus hidup `onPause()` dan `onResume()` di `MainActivity.kt`. Saat gawai diminimize, inisiasikan injeksi interupsi native: `webView.onPause()` dan `webView.pauseTimers()`, lalu lanjutkan via `webView.resumeTimers()` saat kembali ke UI aktif. Ini akan mendinginkan CPU (battery friendly) dan membekukan proses JS engine di belakang layar.
-2. **Efisiensi Battery Broadcast Receiver Native:**
-   Plugin `battery_plus` meregistrasikan sensor melalui native Android *BroadcastReceiver* untuk melacak sisa waktu energi. Sensor ini secara persisten akan di *trigger* setiap berubah persen walau tidak tertampil. **Saran:** Kurangi tingkat *polling* sensor pada Native layer. Alih-alih merespons *realtime percentage trigger*, OS cukup diberitahu sinkronisasi hanya jika perubahan menembus varian 5% delta (`ACTION_BATTERY_CHANGED` difilter) - mengefektifkan radio receiver perangkat.
+2. **Network State Observer (Real-time Background Telemetry)**: 
+   Siswa terkadang gagal unggah lembaran esai akibat Wi-Fi lokal putus. Implementasi observer latensi `connectivity_plus` di latar belakang Flutter, memunculkan "Header Banner Real-Time" apabila latensi ke server Exambro lokal (ICMP Ping Drop) menembus ambang batas (contoh: di atas 2000ms).
+
+3. **Force Update OTA (Over-The-Air) Mechanism**: 
+   Mekanisme penegakan homogenitas rilis APK. Backend Express.js dikonfigurasi untuk mengekspos endpoint rute `/api/version`. Login Screen akan mengonsumsi titik ini untuk mengecek parameter `min_required_version`. Apabila nilai v-app tertinggal, aplikasi akan membekukan UI Login secara imperatif dan memaksa siswa menekan *link* unduhan versi terbaru langsung tanpa harus membongkar-pasang aplikasi via manual admin.
 
 ---
-**Prepared By:** Senior System Architect (AI Assistant)
-**Dikeluarkan:** 01 Maret 2026 (Update Revisi V2)
+**Prepared By:** Lead System Architect (AI Assistant)
+**Dikeluarkan:** 01 Maret 2026 (Pre-Release Version)

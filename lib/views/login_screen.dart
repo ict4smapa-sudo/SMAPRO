@@ -285,7 +285,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
                     // Label versi — minimalis, tidak mencolok
                     const Text(
-                      'Exambro v2.0 — SMAN 4 Jember',
+                      'SMABRO v1.0 — SMAN 4 Jember',
                       style: TextStyle(color: AppColors.textHint, fontSize: 11),
                     ),
                   ],
