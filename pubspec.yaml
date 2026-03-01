@@ -1,0 +1,80 @@
+name: exambro_sman4jember
+description: "Exambro SMAN 4 Jember — Mobile Exam Browser berbasis Flutter. Wrapper aman menuju LMS Moodle lokal dengan fitur kiosk/lockdown mode."
+publish_to: 'none'
+
+version: 2.0.0+1
+
+environment:
+  sdk: ^3.11.0
+
+# =============================================================================
+# DEPENDENCIES — Sesuai PRD Exambro SMAN 4 Jember v2.0, Section 7
+# DILARANG menambah package di luar daftar ini tanpa instruksi eksplisit.
+# =============================================================================
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # State management — ringan, resmi didukung Flutter team
+  provider: ^6.1.1
+
+  # Local storage — menyimpan URL server dan PIN admin (hash SHA-256)
+  shared_preferences: ^2.2.2
+
+  # WebView — tampilkan LMS Moodle secara fullscreen
+  webview_flutter: ^4.4.4
+
+  # Baterai — indikator level baterai di Custom Exam Header Bar
+  battery_plus: ^6.0.3
+
+  # HTTP client — request validasi token ke backend
+  http: ^1.1.0
+
+  # Android: blok screenshot & screen recording (FLAG_SECURE)
+  # CATATAN: flutter_windowmanager dihapus — tidak kompatibel dengan v2 Flutter Embedding.
+  # FLAG_SECURE kini diimplementasikan native di MainActivity.kt (onCreate).
+
+  # Android: App Pinning / kiosk mode
+  kiosk_mode: ^0.2.0
+
+  # iOS: deteksi status Guided Access
+  # CATATAN PRD Section 11.2: Package 'guided_access' tidak tersedia di pub.dev.
+  # Akan diimplementasikan via iOS Platform Channel (UIAccessibility.isGuidedAccessEnabled)
+  # pada Prioritas 9. Tidak ada dependency tambahan yang dibutuhkan.
+
+  # Hashing SHA-256 untuk PIN admin (DILARANG simpan plain text)
+  crypto: ^3.0.3
+
+  # Format tanggal/waktu
+  intl: ^0.18.1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+
+  # Lint rules — mengikuti best practices Dart/Flutter
+  flutter_lints: ^3.0.0
+
+  # Generator App Icon (Android & iOS) dari satu sumber gambar
+  flutter_launcher_icons: ^0.14.3
+
+# =============================================================================
+# FLUTTER SECTION
+# =============================================================================
+flutter:
+  uses-material-design: true
+
+  # Assets — logo sekolah untuk Splash Screen dan Login Screen
+  assets:
+    - assets/images/logo_smapa.png
+
+# =============================================================================
+# FLUTTER LAUNCHER ICONS — Single Source of Truth
+# Jalankan: dart run flutter_launcher_icons
+# Sumber gambar:  assets/images/logo_smapa.png
+# =============================================================================
+flutter_launcher_icons:
+  android: "launcher_icon"
+  ios: true
+  image_path: "assets/images/logo_smapa.png"
+  min_sdk_android: 21

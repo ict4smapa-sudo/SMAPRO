@@ -1,0 +1,557 @@
+<!DOCTYPE html>
+<html lang="id">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Exambro — Admin Panel</title>
+  <style>
+    /* ----------------------------------------------------------------
+       Reset & Base — Dark Mode sesuai tema Exambro (#121212)
+    ---------------------------------------------------------------- */
+    *,
+    *::before,
+    *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    :root {
+      --bg: #121212;
+      --surface: #1E1E1E;
+      --input-bg: #2A2A2A;
+      --border: #444444;
+      --accent: #1565C0;
+      --accent-lt: #1976D2;
+      --text: #FFFFFF;
+      --text-sec: #AAAAAA;
+      --text-hint: #666666;
+      --success: #2E7D32;
+      --error: #C62828;
+      --warning: #F9A825;
+      --radius: 8px;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      font-size: 14px;
+      min-height: 100vh;
+    }
+
+    /* ---------------------------------------------------------------- Header */
+    header {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 14px 24px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    header h1 {
+      font-size: 18px;
+      font-weight: 700;
+    }
+
+    header span {
+      color: var(--text-sec);
+      font-size: 13px;
+    }
+
+    /* ---------------------------------------------------------------- Layout */
+    .container {
+      max-width: 860px;
+      margin: 32px auto;
+      padding: 0 16px;
+    }
+
+    /* ---------------------------------------------------------------- Card */
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 20px 24px;
+      margin-bottom: 24px;
+    }
+
+    .card h2 {
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: 1.3px;
+      color: var(--accent-lt);
+      margin-bottom: 16px;
+      text-transform: uppercase;
+    }
+
+    /* ---------------------------------------------------------------- Form */
+    .form-row {
+      display: flex;
+      gap: 10px;
+    }
+
+    input[type="text"] {
+      flex: 1;
+      background: var(--input-bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      color: var(--text);
+      padding: 10px 14px;
+      font-size: 14px;
+      outline: none;
+      transition: border-color .2s;
+    }
+
+    input[type="text"]:focus {
+      border-color: var(--accent);
+    }
+
+    input[type="text"]::placeholder {
+      color: var(--text-hint);
+    }
+
+    /* ---------------------------------------------------------------- Buttons */
+    button {
+      cursor: pointer;
+      border: none;
+      border-radius: var(--radius);
+      font-size: 13px;
+      font-weight: 600;
+      padding: 10px 18px;
+      transition: opacity .2s, transform .1s;
+    }
+
+    button:hover {
+      opacity: .88;
+    }
+
+    button:active {
+      transform: scale(.97);
+    }
+
+    button:disabled {
+      opacity: .4;
+      cursor: not-allowed;
+    }
+
+    .btn-primary {
+      background: var(--accent);
+      color: #fff;
+    }
+
+    .btn-success {
+      background: var(--success);
+      color: #fff;
+      padding: 6px 12px;
+      font-size: 12px;
+    }
+
+    .btn-danger {
+      background: var(--error);
+      color: #fff;
+      padding: 6px 12px;
+      font-size: 12px;
+    }
+
+    .btn-refresh {
+      background: var(--input-bg);
+      color: var(--text-sec);
+      border: 1px solid var(--border);
+    }
+
+    /* ---------------------------------------------------------------- Toast */
+    #toast {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      padding: 12px 18px;
+      border-radius: var(--radius);
+      font-size: 13px;
+      font-weight: 600;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity .3s;
+      z-index: 999;
+      max-width: 360px;
+    }
+
+    #toast.show {
+      opacity: 1;
+    }
+
+    #toast.success {
+      background: var(--success);
+      color: #fff;
+    }
+
+    #toast.error {
+      background: var(--error);
+      color: #fff;
+    }
+
+    /* ---------------------------------------------------------------- Table */
+    .table-wrap {
+      overflow-x: auto;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+
+    th,
+    td {
+      padding: 11px 14px;
+      text-align: left;
+      border-bottom: 1px solid var(--border);
+      font-size: 13px;
+    }
+
+    th {
+      color: var(--text-sec);
+      font-weight: 600;
+      font-size: 11px;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+    }
+
+    tr:last-child td {
+      border-bottom: none;
+    }
+
+    tr:hover td {
+      background: rgba(255, 255, 255, .025);
+    }
+
+    /* Status badge */
+    .badge {
+      display: inline-block;
+      padding: 3px 10px;
+      border-radius: 20px;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: .5px;
+    }
+
+    .badge-active {
+      background: rgba(46, 125, 50, .25);
+      color: #66BB6A;
+    }
+
+    .badge-inactive {
+      background: rgba(198, 40, 40, .2);
+      color: #EF9A9A;
+    }
+
+    .action-group {
+      display: flex;
+      gap: 6px;
+    }
+
+    /* Empty state */
+    .empty-state {
+      text-align: center;
+      color: var(--text-hint);
+      padding: 32px 0;
+      font-size: 13px;
+    }
+  </style>
+</head>
+
+<body>
+
+  <header>
+    <img src="/assets/images/logo_smapa.png" alt="Logo SMAN 4 Jember"
+      style="width:40px;height:40px;object-fit:contain;border-radius:8px;" onerror="this.style.display='none';" />
+    <h1>Exambro</h1>
+    <span>/ Admin Panel SMAN 4 Jember</span>
+    <a href="/logout"
+      style="margin-left:auto;font-size:12px;color:var(--text-sec);text-decoration:none;padding:6px 14px;border:1px solid var(--border);border-radius:6px;transition:all .2s;"
+      onmouseover="this.style.color='#fff';this.style.borderColor='#888'"
+      onmouseout="this.style.color='';this.style.borderColor=''">
+      &#x2192; Logout
+    </a>
+  </header>
+
+  <div class="container">
+
+    <!-- ===== KONFIGURASI GLOBAL ===== -->
+    <div class="card">
+      <h2>Konfigurasi Global (Satu Pintu)</h2>
+      <div style="display:flex;flex-direction:column;gap:10px;">
+        <div>
+          <label style="display:block;font-size:12px;color:var(--text-sec);margin-bottom:5px;">URL Server Moodle</label>
+          <input type="text" id="cfgMoodleUrl" placeholder="http://192.168.x.x/moodle/login/index.php"
+            autocomplete="off" />
+        </div>
+        <div style="display:flex;gap:10px;">
+          <div style="flex:1">
+            <label style="display:block;font-size:12px;color:var(--text-sec);margin-bottom:5px;">PIN Masuk (Admin
+              Panel)</label>
+            <input type="text" id="cfgAdminPin" placeholder="PIN untuk akses Admin Screen" autocomplete="off" />
+          </div>
+          <div style="flex:1">
+            <label style="display:block;font-size:12px;color:var(--text-sec);margin-bottom:5px;">PIN Keluar
+              Ujian</label>
+            <input type="text" id="cfgExitPin" placeholder="PIN untuk keluar sesi ujian" autocomplete="off" />
+          </div>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px;margin-top:4px;">
+          <button class="btn-primary" id="btnSaveConfig" onclick="saveConfig()">&#10003; Simpan Konfigurasi</button>
+          <span id="cfgNote" style="font-size:12px;color:var(--text-hint);">Kosongkan field PIN jika tidak ingin
+            mengubahnya.</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== TAMBAH TOKEN ===== -->
+    <div class="card">
+      <h2>Tambah Token Ujian</h2>
+      <div class="form-row">
+        <input type="text" id="tokenInput" placeholder="Ketik token ujian (contoh: SMAN4-2024-001)"
+          autocomplete="off" />
+        <button class="btn-primary" id="btnAdd" onclick="addToken()">+ Tambah</button>
+      </div>
+    </div>
+
+    <!-- ===== DAFTAR TOKEN ===== -->
+    <div class="card">
+      <h2 style="display:flex;justify-content:space-between;align-items:center;">
+        <span>Daftar Token Ujian</span>
+        <button class="btn-refresh" onclick="loadTokens()" style="font-size:12px;padding:6px 12px;">&#8635;
+          Refresh</button>
+      </h2>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Token</th>
+              <th>Status Ujian</th>
+              <th>Dibuat</th>
+              <th>Aksi</th>
+            </tr>
+          </thead>
+          <tbody id="tokenTableBody">
+            <tr>
+              <td colspan="5" class="empty-state">Memuat data...</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+  </div>
+
+  <div id="toast"></div>
+
+  <script>
+    // ================================================================
+    // CATATAN AUTH: Autentikasi kini menggunakan Cookie (Cookie-based Auth).
+    // Browser mengirim cookie 'exambro_admin_auth=true' secara otomatis
+    // untuk setiap request ke domain yang sama — TANPA header Authorization.
+    // Jika cookie tidak ada / expired, server akan redirect ke /login.
+    // ================================================================
+
+    // ================================================================
+    // TOAST notification
+    // ================================================================
+    let toastTimer;
+    function showToast(msg, type = 'success') {
+      const el = document.getElementById('toast');
+      el.textContent = msg;
+      el.className = 'show ' + type;
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => el.className = '', 3000);
+    }
+
+    // ================================================================
+    // LOAD TOKENS — GET /admin/tokens
+    // Cookie dikirim otomatis oleh browser (same-origin).
+    // ================================================================
+    async function loadTokens() {
+      const tbody = document.getElementById('tokenTableBody');
+      tbody.innerHTML = '<tr><td colspan="5" class="empty-state">Memuat...</td></tr>';
+
+      try {
+        const res = await fetch('/admin/tokens');
+
+        if (res.redirected || res.status === 401 || res.status === 302) {
+          window.location.href = '/login';
+          return;
+        }
+
+        const data = await res.json();
+
+        if (!data.success || data.tokens.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="5" class="empty-state">Belum ada token. Tambahkan token di atas.</td></tr>';
+          return;
+        }
+
+        tbody.innerHTML = data.tokens.map((t, i) => `
+        <tr>
+          <td style="color:var(--text-hint)">${i + 1}</td>
+          <td><strong style="font-family:monospace;letter-spacing:.5px">${escHtml(t.token)}</strong></td>
+          <td>
+            <span class="badge ${t.exam_active ? 'badge-active' : 'badge-inactive'}">
+              ${t.exam_active ? '● AKTIF' : '○ NON-AKTIF'}
+            </span>
+          </td>
+          <td style="color:var(--text-sec)">${formatDate(t.created_at)}</td>
+          <td>
+            <div class="action-group">
+              <button class="btn-success" onclick="toggleToken('${escHtml(t.token)}')">
+                ${t.exam_active ? 'Nonaktifkan' : 'Aktifkan'}
+              </button>
+              <button class="btn-danger" onclick="deleteToken('${escHtml(t.token)}')">Hapus</button>
+            </div>
+          </td>
+        </tr>
+      `).join('');
+      } catch (err) {
+        showToast('Gagal memuat data: ' + err.message, 'error');
+        tbody.innerHTML = '<tr><td colspan="5" class="empty-state">Error memuat data.</td></tr>';
+      }
+    }
+
+    // ================================================================
+    // ADD TOKEN — POST /admin/token/add
+    // ================================================================
+    async function addToken() {
+      const input = document.getElementById('tokenInput');
+      const token = input.value.trim();
+      if (!token) { showToast('Token tidak boleh kosong.', 'error'); return; }
+
+      const btn = document.getElementById('btnAdd');
+      btn.disabled = true;
+
+      try {
+        const res = await fetch('/admin/token/add', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ token }),
+        });
+        const data = await res.json();
+        showToast(data.message, data.success ? 'success' : 'error');
+        if (data.success) { input.value = ''; loadTokens(); }
+      } catch (err) {
+        showToast('Kesalahan jaringan: ' + err.message, 'error');
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
+    // ================================================================
+    // TOGGLE TOKEN — POST /admin/token/toggle
+    // ================================================================
+    async function toggleToken(token) {
+      try {
+        const res = await fetch('/admin/token/toggle', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ token }),
+        });
+        const data = await res.json();
+        showToast(data.message, data.success ? 'success' : 'error');
+        if (data.success) loadTokens();
+      } catch (err) {
+        showToast('Kesalahan jaringan: ' + err.message, 'error');
+      }
+    }
+
+    // ================================================================
+    // DELETE TOKEN — POST /admin/token/delete
+    // ================================================================
+    async function deleteToken(token) {
+      if (!confirm(`Hapus token "${token}"? Aksi ini tidak dapat dibatalkan.`)) return;
+
+      try {
+        const res = await fetch('/admin/token/delete', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ token }),
+        });
+        const data = await res.json();
+        showToast(data.message, data.success ? 'success' : 'error');
+        if (data.success) loadTokens();
+      } catch (err) {
+        showToast('Kesalahan jaringan: ' + err.message, 'error');
+      }
+    }
+
+    // ================================================================
+    // LOAD CONFIG — GET /admin/config
+    // ================================================================
+    async function loadConfig() {
+      try {
+        const res = await fetch('/admin/config');
+        const data = await res.json();
+        if (data.success && data.config) {
+          document.getElementById('cfgMoodleUrl').value = data.config.moodle_url || '';
+          document.getElementById('cfgAdminPin').value = data.config.admin_pin || '';
+          document.getElementById('cfgExitPin').value = data.config.exit_pin || '';
+        }
+      } catch (err) {
+        console.warn('loadConfig error:', err.message);
+      }
+    }
+
+    // ================================================================
+    // SAVE CONFIG — POST /admin/config
+    // ================================================================
+    async function saveConfig() {
+      const moodle_url = document.getElementById('cfgMoodleUrl').value.trim();
+      const admin_pin = document.getElementById('cfgAdminPin').value.trim();
+      const exit_pin = document.getElementById('cfgExitPin').value.trim();
+
+      if (!moodle_url && !admin_pin && !exit_pin) {
+        showToast('Isi minimal satu field untuk disimpan.', 'error');
+        return;
+      }
+
+      const body = { moodle_url, admin_pin, exit_pin };
+      const btn = document.getElementById('btnSaveConfig');
+      btn.disabled = true;
+
+      try {
+        const res = await fetch('/admin/config', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        const data = await res.json();
+        showToast(data.message, data.success ? 'success' : 'error');
+        if (data.success) loadConfig();
+      } catch (err) {
+        showToast('Kesalahan jaringan: ' + err.message, 'error');
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
+    // ================================================================
+    // HELPERS
+    // ================================================================
+    function escHtml(str) {
+      return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+
+    function formatDate(dt) {
+      if (!dt) return '-';
+      const d = new Date(dt);
+      return d.toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })
+        + ' ' + d.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+    }
+
+    // Init
+    document.getElementById('tokenInput').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') addToken();
+    });
+
+    window.onload = () => { loadConfig(); loadTokens(); };
+  </script>
+</body>
+
+</html>

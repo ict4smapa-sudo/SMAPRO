@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="id">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Exambro — Admin Login</title>
+    <style>
+        *,
+        *::before,
+        *::after {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        :root {
+            --bg: #121212;
+            --surface: #1E1E1E;
+            --border: #333333;
+            --accent: #1565C0;
+            --accent-h: #1976D2;
+            --text: #FFFFFF;
+            --text-sec: #AAAAAA;
+            --hint: #555555;
+            --error: #EF5350;
+            --input-bg: #2A2A2A;
+        }
+
+        body {
+            background: var(--bg);
+            color: var(--text);
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 40px 36px 36px;
+            width: 100%;
+            max-width: 360px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, .5);
+        }
+
+        /* Logo */
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 28px;
+        }
+
+        .logo-icon {
+            width: 38px;
+            height: 38px;
+            background: var(--accent);
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .logo-icon svg {
+            width: 20px;
+            height: 20px;
+        }
+
+        .logo-text {
+            line-height: 1.2;
+        }
+
+        .logo-text strong {
+            font-size: 16px;
+            font-weight: 700;
+            display: block;
+        }
+
+        .logo-text span {
+            font-size: 11px;
+            color: var(--text-sec);
+        }
+
+        h2 {
+            font-size: 20px;
+            font-weight: 700;
+            margin-bottom: 6px;
+        }
+
+        .subtitle {
+            font-size: 13px;
+            color: var(--text-sec);
+            margin-bottom: 28px;
+            line-height: 1.5;
+        }
+
+        label {
+            display: block;
+            font-size: 12px;
+            color: var(--text-sec);
+            margin-bottom: 6px;
+            font-weight: 600;
+            letter-spacing: .4px;
+        }
+
+        input[type="password"] {
+            width: 100%;
+            background: var(--input-bg);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            color: var(--text);
+            padding: 11px 14px;
+            font-size: 15px;
+            outline: none;
+            transition: border-color .2s;
+            margin-bottom: 20px;
+        }
+
+        input[type="password"]:focus {
+            border-color: var(--accent-h);
+        }
+
+        input[type="password"]::placeholder {
+            color: var(--hint);
+        }
+
+        button {
+            width: 100%;
+            background: var(--accent);
+            color: #fff;
+            border: none;
+            border-radius: 8px;
+            padding: 12px;
+            font-size: 14px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: background .2s, transform .1s;
+            letter-spacing: .3px;
+        }
+
+        button:hover {
+            background: var(--accent-h);
+        }
+
+        button:active {
+            transform: scale(.98);
+        }
+
+        .error-msg {
+            background: rgba(239, 83, 80, .12);
+            border: 1px solid rgba(239, 83, 80, .4);
+            color: var(--error);
+            border-radius: 8px;
+            padding: 10px 14px;
+            font-size: 13px;
+            margin-bottom: 18px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .footer {
+            text-align: center;
+            margin-top: 24px;
+            font-size: 11px;
+            color: var(--hint);
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="card">
+        <div class="logo">
+            <div class="logo-icon" style="background:transparent;padding:0;">
+                <img src="/assets/images/logo_smapa.png" alt="Logo SMAN 4 Jember"
+                    style="width:38px;height:38px;object-fit:contain;border-radius:8px;"
+                    onerror="this.style.display='none';this.nextElementSibling.style.display='flex';" />
+                <div
+                    style="display:none;width:38px;height:38px;background:var(--accent);border-radius:10px;align-items:center;justify-content:center;">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round"
+                        stroke-linejoin="round" style="width:20px;height:20px;">
+                        <path d="M12 2L2 7l10 5 10-5-10-5z" />
+                        <polyline points="2 17 12 22 22 17" />
+                        <polyline points="2 12 12 17 22 12" />
+                    </svg>
+                </div>
+            </div>
+            <div class="logo-text">
+                <strong>Exambro</strong>
+                <span>SMAN 4 Jember</span>
+            </div>
+        </div>
+
+        <h2>Admin Panel</h2>
+        <p class="subtitle">Masukkan password untuk melanjutkan ke panel pengawas.</p>
+
+        <!-- Error message — hanya muncul jika URL mengandung ?error=1 -->
+        <div class="error-msg" id="errorMsg" style="display:none">
+            &#9888; Password salah. Silakan coba lagi.
+        </div>
+
+        <form method="POST" action="/login">
+            <label for="password">Password Admin</label>
+            <input type="password" id="password" name="password" placeholder="Masukkan password..."
+                autocomplete="current-password" autofocus />
+            <button type="submit">Masuk &rarr;</button>
+        </form>
+
+        <div class="footer">Exambro Backend v2.0 &mdash; SMAN 4 Jember</div>
+    </div>
+
+    <script>
+        // Tampilkan pesan error jika URL mengandung ?error=1
+        if (new URLSearchParams(window.location.search).get('error') === '1') {
+            document.getElementById('errorMsg').style.display = 'flex';
+        }
+    </script>
+
+</body>
+
+</html>

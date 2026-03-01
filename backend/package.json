@@ -1,0 +1,25 @@
+{
+  "name": "exambro-backend",
+  "version": "2.0.0",
+  "description": "Backend API untuk Exambro SMAN 4 Jember — Validasi token ujian dan admin panel.",
+  "main": "app.js",
+  "scripts": {
+    "start": "node app.js",
+    "dev": "node --watch app.js",
+    "pm2": "pm2 start ecosystem.config.js"
+  },
+  "keywords": [
+    "exambro",
+    "sman4jember",
+    "ujian",
+    "moodle"
+  ],
+  "author": "Tim Pengembang SMAN 4 Jember",
+  "license": "ISC",
+  "dependencies": {
+    "better-sqlite3": "^12.6.2",
+    "dotenv": "^17.3.1",
+    "express": "^5.2.1",
+    "express-rate-limit": "^8.2.1"
+  }
+}
