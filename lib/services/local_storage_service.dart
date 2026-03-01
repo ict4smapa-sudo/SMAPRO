@@ -2,7 +2,8 @@
 // File        : local_storage_service.dart
 // Fungsi Utama: Wrapper singleton untuk SharedPreferences.
 //               Menyimpan dan membaca: URL server Moodle, URL API validasi,
-//               PIN admin (SHA-256 ONLY), dan log aplikasi (ring buffer).
+//               PIN admin (SHA-256 ONLY), log aplikasi (ring buffer),
+//               dan status pelanggaran siswa (Violation/Banned flag).
 // Tanggal     : 27 Februari 2026
 // PRD Section : Section 4.3, Section 4.4, Section 12.1
 // Keys        : Lihat utils/constants.dart — AppConstants.key*
@@ -82,6 +83,46 @@ class LocalStorageService {
   /// KRITIS: Parameter [sha256Hash] HARUS sudah dalam bentuk hex string SHA-256.
   Future<void> setExitPinHash(String sha256Hash) async {
     await _prefs.setString(AppConstants.keyExitPinHash, sha256Hash);
+  }
+
+  // ---------------------------------------------------------------------------
+  // PIN PENGAWAS RUANGAN (SUPERVISOR PIN — HASH ONLY)
+  // ---------------------------------------------------------------------------
+
+  /// Key SharedPreferences untuk menyimpan hash SHA-256 PIN Pengawas Ruangan.
+  static const String _keySupervisorPinHash = 'supervisor_pin_hash';
+
+  /// Membaca hash SHA-256 PIN Pengawas Ruangan. Null jika belum pernah di-set.
+  String? getSupervisorPinHash() => _prefs.getString(_keySupervisorPinHash);
+
+  /// Menyimpan hash SHA-256 PIN Pengawas Ruangan.
+  /// KRITIS: Parameter [sha256Hash] HARUS sudah dalam bentuk hex string SHA-256.
+  Future<void> setSupervisorPinHash(String sha256Hash) async {
+    await _prefs.setString(_keySupervisorPinHash, sha256Hash);
+  }
+
+  // ---------------------------------------------------------------------------
+  // VIOLATION COUNTER (3-Strike Policy)
+  // ---------------------------------------------------------------------------
+
+  /// Key SharedPreferences untuk menyimpan jumlah pelanggaran siswa.
+  static const String _keyViolationCount = 'violation_count';
+
+  /// Membaca jumlah pelanggaran dari storage (synchronous, _prefs sudah init).
+  /// Mengembalikan 0 jika belum pernah ada pelanggaran.
+  int getViolationCount() {
+    return _prefs.getInt(_keyViolationCount) ?? 0;
+  }
+
+  /// Menambah hitungan pelanggaran sebesar 1 dan menyimpan ke storage.
+  Future<void> incrementViolationCount() async {
+    final current = _prefs.getInt(_keyViolationCount) ?? 0;
+    await _prefs.setInt(_keyViolationCount, current + 1);
+  }
+
+  /// Reset hitungan pelanggaran ke 0 (dipanggil saat PIN Pengawas benar).
+  Future<void> resetViolationCount() async {
+    await _prefs.setInt(_keyViolationCount, 0);
   }
 
   // ---------------------------------------------------------------------------

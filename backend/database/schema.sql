@@ -26,8 +26,9 @@ CREATE TABLE IF NOT EXISTS admin_config (
 -- Menyimpan URL Moodle, PIN Masuk (Admin), dan PIN Keluar Ujian.
 -- Selalu hanya 1 baris (id=1). Default diinisialisasi di db.js.
 CREATE TABLE IF NOT EXISTS app_config (
-  id         INTEGER PRIMARY KEY,
-  moodle_url TEXT    NOT NULL DEFAULT 'http://182.253.41.180/login/index.php',
-  admin_pin  TEXT    NOT NULL DEFAULT '123456',
-  exit_pin   TEXT    NOT NULL DEFAULT '123456'
+  id             INTEGER PRIMARY KEY,
+  moodle_url     TEXT    NOT NULL DEFAULT 'http://182.253.41.180/login/index.php',
+  admin_pin      TEXT    NOT NULL DEFAULT '123456',
+  exit_pin       TEXT    NOT NULL DEFAULT '123456',
+  supervisor_pin TEXT    NOT NULL DEFAULT '123456'
 );

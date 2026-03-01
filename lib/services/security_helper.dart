@@ -82,6 +82,36 @@ class SecurityHelper {
   }
 
   // ---------------------------------------------------------------------------
+  // PUBLIC METHODS — Granular Lockdown (untuk split-phase di ExamViewModel)
+  // ---------------------------------------------------------------------------
+
+  /// Hanya mengaktifkan Kiosk Mode (Screen Pinning) tanpa Battery Exemption.
+  /// Digunakan untuk fire-and-forget activation agar tidak blocking loadRequest.
+  Future<void> enableKioskModeOnly() async {
+    if (!Platform.isAndroid) return;
+    try {
+      await _kioskChannel.invokeMethod<void>('enableKioskMode');
+      debugPrint('[SECURITY] Kiosk Mode AKTIF (startLockTask dipanggil).');
+    } on PlatformException catch (e) {
+      debugPrint('[SECURITY] enableKioskMode PlatformException: ${e.message}');
+    } catch (e) {
+      debugPrint('[SECURITY] enableKioskMode error: $e');
+    }
+  }
+
+  /// Hanya meminta Battery Exemption tanpa mengaktifkan Kiosk Mode.
+  /// Dijalankan setelah WebView frame pertama selesai (deferred 1500ms).
+  Future<void> requestBatteryExemptionOnly() async {
+    if (!Platform.isAndroid) return;
+    try {
+      await _kioskChannel.invokeMethod<void>('requestBatteryExemption');
+      debugPrint('[SECURITY] Battery Exemption diminta ke OS.');
+    } catch (e) {
+      debugPrint('[SECURITY] requestBatteryExemption tidak tersedia: $e');
+    }
+  }
+
+  // ---------------------------------------------------------------------------
   // PUBLIC METHODS — Disable Lockdown
   // ---------------------------------------------------------------------------
 

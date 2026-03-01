@@ -281,11 +281,23 @@
     <div class="card">
       <h2>Konfigurasi Global (Satu Pintu)</h2>
       <div style="display:flex;flex-direction:column;gap:10px;">
-        <div>
-          <label style="display:block;font-size:12px;color:var(--text-sec);margin-bottom:5px;">URL Server Moodle</label>
-          <input type="text" id="cfgMoodleUrl" placeholder="http://192.168.x.x/moodle/login/index.php"
-            autocomplete="off" />
+
+        <!-- Baris 1: URL Moodle | PIN Pengawas Ruangan -->
+        <div style="display:flex;gap:10px;">
+          <div style="flex:1">
+            <label style="display:block;font-size:12px;color:var(--text-sec);margin-bottom:5px;">URL Server
+              Moodle</label>
+            <input type="text" id="cfgMoodleUrl" placeholder="http://192.168.x.x/moodle/login/index.php"
+              autocomplete="off" />
+          </div>
+          <div style="flex:1">
+            <label style="display:block;font-size:12px;color:var(--text-sec);margin-bottom:5px;">PIN Pengawas Ruangan
+              <span style="color:var(--warning);font-size:10px;">(Unblock Pelanggaran)</span></label>
+            <input type="text" id="cfgSupervisorPin" placeholder="PIN khusus pengawas ujian" autocomplete="off" />
+          </div>
         </div>
+
+        <!-- Baris 2: PIN Admin Panel | PIN Keluar Ujian -->
         <div style="display:flex;gap:10px;">
           <div style="flex:1">
             <label style="display:block;font-size:12px;color:var(--text-sec);margin-bottom:5px;">PIN Masuk (Admin
@@ -298,6 +310,7 @@
             <input type="text" id="cfgExitPin" placeholder="PIN untuk keluar sesi ujian" autocomplete="off" />
           </div>
         </div>
+
         <div style="display:flex;align-items:center;gap:10px;margin-top:4px;">
           <button class="btn-primary" id="btnSaveConfig" onclick="saveConfig()">&#10003; Simpan Konfigurasi</button>
           <span id="cfgNote" style="font-size:12px;color:var(--text-hint);">Kosongkan field PIN jika tidak ingin
@@ -492,6 +505,7 @@
           document.getElementById('cfgMoodleUrl').value = data.config.moodle_url || '';
           document.getElementById('cfgAdminPin').value = data.config.admin_pin || '';
           document.getElementById('cfgExitPin').value = data.config.exit_pin || '';
+          document.getElementById('cfgSupervisorPin').value = data.config.supervisor_pin || '';
         }
       } catch (err) {
         console.warn('loadConfig error:', err.message);
@@ -505,13 +519,14 @@
       const moodle_url = document.getElementById('cfgMoodleUrl').value.trim();
       const admin_pin = document.getElementById('cfgAdminPin').value.trim();
       const exit_pin = document.getElementById('cfgExitPin').value.trim();
+      const supervisor_pin = document.getElementById('cfgSupervisorPin').value.trim();
 
-      if (!moodle_url && !admin_pin && !exit_pin) {
+      if (!moodle_url && !admin_pin && !exit_pin && !supervisor_pin) {
         showToast('Isi minimal satu field untuk disimpan.', 'error');
         return;
       }
 
-      const body = { moodle_url, admin_pin, exit_pin };
+      const body = { moodle_url, admin_pin, exit_pin, supervisor_pin };
       const btn = document.getElementById('btnSaveConfig');
       btn.disabled = true;
 

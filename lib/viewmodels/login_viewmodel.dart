@@ -138,6 +138,13 @@ class LoginViewModel extends ChangeNotifier {
             CryptoHelper.hashPin(response.exitPin!),
           );
         }
+        if (response.supervisorPin != null &&
+            response.supervisorPin!.isNotEmpty) {
+          await _storage.setSupervisorPinHash(
+            CryptoHelper.hashPin(response.supervisorPin!),
+          );
+          // DILARANG log plain text PIN
+        }
 
         _logger.log(
           'Token validation: SUCCESS — exam active, navigating to /exam',

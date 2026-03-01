@@ -13,7 +13,9 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../services/local_storage_service.dart';
 import '../utils/colors.dart';
+import '../utils/crypto_helper.dart';
 import '../utils/routes.dart';
 import '../viewmodels/login_viewmodel.dart';
 
@@ -40,9 +42,21 @@ class _LoginScreenState extends State<LoginScreen> {
   /// FocusNode untuk mengatur keyboard saat submit.
   final FocusNode _tokenFocusNode = FocusNode();
 
+  /// Jumlah pelanggaran dari 3-Strike Policy.
+  /// 0-2 = boleh login, >=3 = layar merah blokir sampai PIN Pengawas benar.
+  int _violationCount = 0;
+
   // ---------------------------------------------------------------------------
   // LIFECYCLE
   // ---------------------------------------------------------------------------
+
+  @override
+  void initState() {
+    super.initState();
+    // Baca counter pelanggaran SECARA SINKRON dari _prefs yang sudah di-init di main().
+    // Tidak perlu addPostFrameCallback — _prefs sudah siap sebelum runApp().
+    _violationCount = LocalStorageService().getViolationCount();
+  }
 
   @override
   void dispose() {
@@ -65,6 +79,29 @@ class _LoginScreenState extends State<LoginScreen> {
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
         duration: const Duration(seconds: 3),
+      ),
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // UI HELPERS — Banned Unlock Dialog
+  // ---------------------------------------------------------------------------
+
+  /// Menampilkan [_LoginSupervisorPinDialog] untuk membuka blokir perangkat banned.
+  /// Controller lifecycle dikelola sepenuhnya oleh widget dialog.
+  void _showBannedUnlockDialog(BuildContext context) {
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => _LoginSupervisorPinDialog(
+        onSuccess: () async {
+          // Reset counter pelanggaran ke 0 di persistent storage
+          await LocalStorageService().resetViolationCount();
+          if (!mounted) return;
+          setState(() => _violationCount = 0);
+        },
+        onWrongPin: () =>
+            _showSnackBar('PIN salah. Hubungi pengawas.', Colors.red.shade300),
       ),
     );
   }
@@ -140,6 +177,83 @@ class _LoginScreenState extends State<LoginScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // -------------------------------------------------------------------------
+    // DEVICE BANNED GATE
+    // Tampil jika perangkat memiliki flag pelanggaran permanen di storage.
+    // Siswa TIDAK bisa masuk ujian sampai Pengawas memasukkan PIN yang benar.
+    // -------------------------------------------------------------------------
+    if (_violationCount >= 3) {
+      return Scaffold(
+        backgroundColor: Colors.red.shade800,
+        body: SafeArea(
+          child: Center(
+            child: Padding(
+              padding: const EdgeInsets.all(32),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(
+                    Icons.gpp_bad_rounded,
+                    color: Colors.white,
+                    size: 90,
+                  ),
+                  const SizedBox(height: 24),
+                  const Text(
+                    'PERANGKAT DIBLOKIR',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 26,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 1.2,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  const Text(
+                    'Perangkat ini tercatat pernah melakukan pelanggaran '
+                    'selama sesi ujian.\n\n'
+                    'Harap hubungi pengawas untuk membuka blokir.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: Colors.white70,
+                      fontSize: 13,
+                      height: 1.6,
+                    ),
+                  ),
+                  const SizedBox(height: 40),
+                  SizedBox(
+                    width: double.infinity,
+                    height: 52,
+                    child: ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.white,
+                        foregroundColor: Colors.red.shade800,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                      ),
+                      icon: const Icon(Icons.lock_open_rounded, size: 20),
+                      label: const Text(
+                        'Buka Blokir (PIN Pengawas)',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 14,
+                        ),
+                      ),
+                      onPressed: () => _showBannedUnlockDialog(context),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    // -------------------------------------------------------------------------
+    // NORMAL LOGIN UI
+    // -------------------------------------------------------------------------
     return Scaffold(
       backgroundColor: AppColors.background,
       // Pastikan tidak ada back button — PRD: TIDAK ada tombol back
@@ -474,6 +588,142 @@ class _AdminPinDialogState extends State<AdminPinDialog> {
                   ),
                 )
               : const Text('Masuk'),
+        ),
+      ],
+    );
+  }
+}
+
+// =============================================================================
+// _LoginSupervisorPinDialog — Dedicated StatefulWidget untuk PIN Pengawas di LoginScreen
+// =============================================================================
+// Identik secara fungsional dengan _SupervisorPinDialog di exam_screen.dart.
+// Dipisahkan karena keduanya berada di file yang berbeda (private class).
+// =============================================================================
+class _LoginSupervisorPinDialog extends StatefulWidget {
+  const _LoginSupervisorPinDialog({
+    required this.onSuccess,
+    required this.onWrongPin,
+  });
+
+  final VoidCallback onSuccess;
+  final VoidCallback onWrongPin;
+
+  @override
+  State<_LoginSupervisorPinDialog> createState() =>
+      _LoginSupervisorPinDialogState();
+}
+
+class _LoginSupervisorPinDialogState extends State<_LoginSupervisorPinDialog> {
+  late final TextEditingController _pin;
+  bool _isPinVisible = false;
+  bool _isVerifying = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _pin = TextEditingController();
+  }
+
+  @override
+  void dispose() {
+    _pin.dispose();
+    super.dispose();
+  }
+
+  Future<void> _verify() async {
+    final pin = _pin.text.trim();
+    if (pin.isEmpty || _isVerifying) return;
+
+    setState(() => _isVerifying = true);
+
+    final inputHash = CryptoHelper.hashPin(pin);
+    final storedHash = LocalStorageService().getSupervisorPinHash();
+    final isValid = storedHash != null && inputHash == storedHash;
+
+    if (!mounted) return;
+    setState(() => _isVerifying = false);
+
+    if (isValid) {
+      Navigator.of(context).pop();
+      widget.onSuccess();
+    } else {
+      widget.onWrongPin();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      backgroundColor: const Color(0xFF1E1E2E),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      title: const Row(
+        children: [
+          Icon(
+            Icons.admin_panel_settings_rounded,
+            color: Colors.redAccent,
+            size: 22,
+          ),
+          SizedBox(width: 8),
+          Text(
+            'Verifikasi Pengawas',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 17,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ],
+      ),
+      content: TextField(
+        controller: _pin,
+        obscureText: !_isPinVisible,
+        keyboardType: TextInputType.number,
+        autofocus: true,
+        onSubmitted: (_) => _verify(),
+        style: const TextStyle(color: Colors.white),
+        decoration: InputDecoration(
+          hintText: 'PIN Pengawas Ruangan',
+          hintStyle: const TextStyle(color: Colors.white38, fontSize: 14),
+          suffixIcon: IconButton(
+            icon: Icon(
+              _isPinVisible
+                  ? Icons.visibility_off_outlined
+                  : Icons.visibility_outlined,
+              color: Colors.white38,
+              size: 20,
+            ),
+            onPressed: () => setState(() => _isPinVisible = !_isPinVisible),
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Batal', style: TextStyle(color: Colors.white54)),
+        ),
+        ElevatedButton(
+          style: ElevatedButton.styleFrom(
+            backgroundColor: Colors.redAccent,
+            foregroundColor: Colors.white,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
+          ),
+          onPressed: _isVerifying ? null : _verify,
+          child: _isVerifying
+              ? const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: Colors.white,
+                  ),
+                )
+              : const Text(
+                  'Verifikasi',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
         ),
       ],
     );

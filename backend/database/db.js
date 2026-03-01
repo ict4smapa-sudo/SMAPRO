@@ -62,17 +62,29 @@ if (fs.existsSync(schemaPath)) {
 }
 
 // =============================================================================
+// MIGRASI KOLOM supervisor_pin — Safe ALTER TABLE
+// Menambahkan kolom supervisor_pin jika belum ada (database lama / upgrade).
+// try-catch wajib karena SQLite akan throw error jika kolom sudah ada.
+// =============================================================================
+try {
+    db.exec("ALTER TABLE app_config ADD COLUMN supervisor_pin TEXT DEFAULT '123456';");
+    console.log('[DB] Kolom supervisor_pin berhasil ditambahkan ke app_config.');
+} catch (_) {
+    // Kolom sudah ada — skip migrasi (kondisi normal saat server restart)
+}
+
+// =============================================================================
 // INISIALISASI DEFAULT app_config — Centralized Configuration
 // Jika tabel app_config baru saja dibuat (kosong), masukkan satu baris default.
-// Default: moodle_url = alamat Moodle SMAN 4 Jember, admin_pin dan exit_pin = '123456'.
+// Default: moodle_url = alamat Moodle SMAN 4 Jember, semua PIN = '123456'.
 // Admin dapat mengubah ketiganya via Web Panel (/admin → Konfigurasi Global).
 // =============================================================================
 const configCount = db.prepare('SELECT COUNT(*) as c FROM app_config').get();
 if (configCount.c === 0) {
     db.prepare(
-        'INSERT INTO app_config (moodle_url, admin_pin, exit_pin) VALUES (?, ?, ?)'
-    ).run('http://182.253.41.180/login/index.php', '123456', '123456');
-    console.log('[DB] app_config default seeded (moodle_url, admin_pin=123456, exit_pin=123456).');
+        'INSERT INTO app_config (moodle_url, admin_pin, exit_pin, supervisor_pin) VALUES (?, ?, ?, ?)'
+    ).run('http://182.253.41.180/login/index.php', '123456', '123456', '123456');
+    console.log('[DB] app_config default seeded (moodle_url, admin_pin, exit_pin, supervisor_pin = 123456).');
 } else {
     console.log('[DB] app_config sudah ada, skip seeding.');
 }

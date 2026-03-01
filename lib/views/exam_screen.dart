@@ -20,7 +20,9 @@ import 'package:provider/provider.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
+import '../services/local_storage_service.dart';
 import '../utils/colors.dart';
+import '../utils/crypto_helper.dart';
 import '../utils/routes.dart';
 import '../viewmodels/exam_viewmodel.dart';
 import '../viewmodels/login_viewmodel.dart';
@@ -36,9 +38,18 @@ class ExamScreen extends StatefulWidget {
   State<ExamScreen> createState() => _ExamScreenState();
 }
 
-class _ExamScreenState extends State<ExamScreen> {
+class _ExamScreenState extends State<ExamScreen> with WidgetsBindingObserver {
   // Flag untuk menghindari snackbar duplikat
   bool _snackBarShowing = false;
+
+  // Hitungan pelanggaran dari 3-Strike Policy.
+  // 0 = bersih, 1-2 = peringatan, >=3 = layar merah/banned.
+  int _violationCount = 0;
+
+  // Guard / debounce flag untuk mencegah double-counting.
+  // true saat pelanggaran sudah dicatat dalam satu siklus inactive→paused;
+  // di-reset ke false saat resumed (kembali ke ujian).
+  bool _isHandlingViolation = false;
 
   // ---------------------------------------------------------------------------
   // LIFECYCLE
@@ -47,11 +58,30 @@ class _ExamScreenState extends State<ExamScreen> {
   @override
   void initState() {
     super.initState();
+    // Daftarkan observer untuk memantau lifecycle app (Violation Trap)
+    WidgetsBinding.instance.addObserver(this);
+    // Immersive Mode: sembunyikan StatusBar & NavigationBar.
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
     // Wakelock: cegah layar mati selama sesi ujian berlangsung.
     WakelockPlus.enable();
     // Anti-Copy-Paste: kosongkan clipboard saat layar ujian dibuka.
-    // Mencegah siswa mempaste teks dari luar aplikasi ke dalam WebView.
     Clipboard.setData(const ClipboardData(text: ''));
+    // Persistent Violation: baca counter dari storage (synchronous).
+    // Jika siswa sudah pernah melanggar sebelum force-close, count terbaca.
+    _violationCount = LocalStorageService().getViolationCount();
+    // Native Overlay Blocker — daftarkan listener untuk sinyal onWindowFocusLost
+    // yang dikirim oleh MainActivity.onWindowFocusChanged saat Floating App
+    // merebut fokus tanpa mengubah AppLifecycleState ke paused/inactive.
+    const MethodChannel('id.sman4jember.exambro/kiosk').setMethodCallHandler((
+      call,
+    ) async {
+      debugPrint(
+        'EXAMBRO_DEBUG: Flutter menerima sinyal Native -> ${call.method}',
+      );
+      if (call.method == 'onWindowFocusLost') {
+        _triggerViolationEvent();
+      }
+    });
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<ExamViewModel>().initWebView();
     });
@@ -59,10 +89,96 @@ class _ExamScreenState extends State<ExamScreen> {
 
   @override
   void dispose() {
-    // Kembalikan pengaturan layar ke normal saat ExamScreen di-unmount.
-    // Dipanggil baik saat exit normal (PIN) maupun edge-case teardown.
+    // Lepaskan observer lifecycle saat keluar.
+    WidgetsBinding.instance.removeObserver(this);
+    // Kembalikan UI OS ke normal (edge-to-edge) saat ExamScreen di-unmount.
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     WakelockPlus.disable();
     super.dispose();
+  }
+
+  // ---------------------------------------------------------------------------
+  // VIOLATION TRAP — Lifecycle Observer
+  // ---------------------------------------------------------------------------
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    debugPrint('EXAMBRO_DEBUG: Flutter AppLifecycle berubah menjadi -> $state');
+    // Jaring diperluas: tangkap paused (keluar app) DAN inactive
+    // (Floating Apps, Split Screen, status bar ditarik, telepon masuk).
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.inactive) {
+      _triggerViolationEvent();
+    } else if (state == AppLifecycleState.resumed) {
+      // Siswa kembali fokus ke ujian → buka kunci debounce
+      _isHandlingViolation = false;
+
+      // Baca count terbaru dari storage (sync, _prefs sudah init).
+      final count = LocalStorageService().getViolationCount();
+      if (mounted) {
+        setState(() => _violationCount = count);
+        // Strike 1 & 2 → dialog peringatan; Strike 3 → build gate layar merah.
+        if (count == 1 || count == 2) {
+          _showWarningDialog(count);
+        }
+      }
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // UI HELPERS — Violation Unlock Dialog
+  // ---------------------------------------------------------------------------
+
+  /// Menampilkan [_SupervisorPinDialog] untuk membuka blokir Violation Trap.
+  /// Controller lifecycle dikelola sepenuhnya oleh widget dialog — tidak ada
+  /// controller yang dibuat atau di-dispose di sini (mencegah crash).
+  void _showViolationUnlockDialog(BuildContext context) {
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => _SupervisorPinDialog(
+        onSuccess: () async {
+          // 1. Reset counter ke 0 di persistent storage
+          await LocalStorageService().resetViolationCount();
+          if (!mounted) return;
+          // 2. Reset in-memory counter → rebuild ke UI ujian normal
+          setState(() => _violationCount = 0);
+          // 3. Aktifkan kembali Immersive Mode
+          SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+        },
+        onWrongPin: () =>
+            _showSnackBar('PIN salah. Hubungi pengawas.', AppColors.snackError),
+      ),
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // UI HELPERS — Violation Event Trigger (Modular)
+  // ---------------------------------------------------------------------------
+
+  /// Satu titik masuk untuk semua sumber pelanggaran:
+  ///   — AppLifecycleState.paused / inactive (didChangeAppLifecycleState)
+  ///   — onWindowFocusLost dari native Kotlin (Floating Apps tak terdeteksi lifecycle)
+  ///
+  /// [_isHandlingViolation] bertindak sebagai debounce — mencegah double-count
+  /// saat dua sumber menembak secara bersamaan (mis. inactive lalu paused).
+  void _triggerViolationEvent() {
+    debugPrint(
+      'EXAMBRO_DEBUG: _triggerViolationEvent dieksekusi! Count: $_violationCount, isHandling: $_isHandlingViolation',
+    );
+    if (!mounted || _violationCount >= 3 || _isHandlingViolation) return;
+    _isHandlingViolation = true;
+    LocalStorageService().incrementViolationCount();
+    // Baca nilai terbaru setelah increment (sync — _prefs sudah di-write).
+    final count = LocalStorageService().getViolationCount();
+    // Guard kedua: cegah setState jika widget sudah dispose saat native channel
+    // menembak sinyal di tengah transisi navigasi.
+    if (!mounted) return;
+    setState(() => _violationCount = count);
+    if (count < 3) {
+      _showWarningDialog(count);
+    }
+    // Jika count == 3, build() akan otomatis render layar merah via setState.
   }
 
   // ---------------------------------------------------------------------------
@@ -89,11 +205,134 @@ class _ExamScreenState extends State<ExamScreen> {
   }
 
   // ---------------------------------------------------------------------------
+  // UI HELPERS — Warning Dialog (Peringatan Ke-1 & Ke-2)
+  // ---------------------------------------------------------------------------
+
+  /// Menampilkan dialog peringatan keras saat pelanggaran ke-1 dan ke-2.
+  /// Dialog tidak bisa di-dismiss dengan mengetuk area luar (barrierDismissible: false).
+  /// Pelanggaran ke-3 menampilkan layar merah penuh — tidak melalui fungsi ini.
+  void _showWarningDialog(int count) {
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1E1E2E),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        title: const Text(
+          'PERINGATAN KECURANGAN!',
+          style: TextStyle(
+            color: Colors.redAccent,
+            fontWeight: FontWeight.bold,
+            fontSize: 16,
+          ),
+        ),
+        content: Text(
+          'Anda terdeteksi keluar dari layar ujian.\n\n'
+          'Pelanggaran ke: $count dari maksimal 3.\n\n'
+          'Jika mencapai 3 kali, ujian Anda akan DIBLOKIR permanen!',
+          style: const TextStyle(color: Colors.white70, height: 1.5),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text(
+              'SAYA MENGERTI',
+              style: TextStyle(
+                color: Colors.redAccent,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ---------------------------------------------------------------------------
   // BUILD
   // ---------------------------------------------------------------------------
 
   @override
   Widget build(BuildContext context) {
+    // -------------------------------------------------------------------------
+    // VIOLATION TRAP UI — Sistem Tilang (3-Strike Policy)
+    // Tampil saat _violationCount mencapai 3. Layar ini TIDAK bisa di-dismiss
+    // tanpa PIN Pengawas yang benar (Supervisor PIN).
+    // -------------------------------------------------------------------------
+    if (_violationCount >= 3) {
+      return PopScope(
+        canPop: false,
+        child: Scaffold(
+          backgroundColor: Colors.red.shade800,
+          body: SafeArea(
+            child: Center(
+              child: Padding(
+                padding: const EdgeInsets.all(32),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(
+                      Icons.warning_rounded,
+                      color: Colors.white,
+                      size: 80,
+                    ),
+                    const SizedBox(height: 24),
+                    const Text(
+                      'PELANGGARAN TERDETEKSI!',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 26,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 1.2,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    const Text(
+                      'Anda telah keluar dari aplikasi atau mematikan '
+                      'layar saat ujian berlangsung.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: Colors.white70,
+                        fontSize: 14,
+                        height: 1.6,
+                      ),
+                    ),
+                    const SizedBox(height: 40),
+                    SizedBox(
+                      width: double.infinity,
+                      height: 52,
+                      child: ElevatedButton.icon(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.white,
+                          foregroundColor: Colors.red.shade800,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                        ),
+                        icon: const Icon(Icons.lock_open_rounded, size: 20),
+                        label: const Text(
+                          'Buka Blokir (Butuh PIN Pengawas)',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 14,
+                          ),
+                        ),
+                        onPressed: () => _showViolationUnlockDialog(context),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    // -------------------------------------------------------------------------
+    // NORMAL EXAM UI
+    // -------------------------------------------------------------------------
     return PopScope(
       // PRD: Tombol back hardware Android TIDAK boleh keluar dari Exam Screen
       canPop: false,
@@ -731,6 +970,154 @@ class _ExitPinDialogState extends State<ExitPinDialog> {
                   ),
                 )
               : const Text('Keluar Ujian'),
+        ),
+      ],
+    );
+  }
+}
+
+// =============================================================================
+// _SupervisorPinDialog — Dedicated StatefulWidget untuk PIN Pengawas
+// =============================================================================
+//
+// Alasan pemisahan ke StatefulWidget tersendiri:
+// Mengelola TextEditingController di dalam StatefulWidget memastikan
+// controller di-dispose HANYA oleh Flutter framework (di dispose()), bukan
+// secara manual di dalam async callback — mencegah crash:
+// "TextEditingController was used after being disposed".
+//
+// Menerima dua callback:
+//   [onSuccess]  → dipanggil oleh parent setelah Navigator.pop();
+//   [onWrongPin] → dipanggil untuk menampilkan SnackBar error.
+// =============================================================================
+class _SupervisorPinDialog extends StatefulWidget {
+  const _SupervisorPinDialog({
+    required this.onSuccess,
+    required this.onWrongPin,
+  });
+
+  /// Dipanggil di parent setelah dialog di-pop (PIN benar).
+  final VoidCallback onSuccess;
+
+  /// Dipanggil di parent saat PIN salah (untuk SnackBar).
+  final VoidCallback onWrongPin;
+
+  @override
+  State<_SupervisorPinDialog> createState() => _SupervisorPinDialogState();
+}
+
+class _SupervisorPinDialogState extends State<_SupervisorPinDialog> {
+  // Controller dan FocusNode diinisialisasi di sini — bukan di luar dialog.
+  // Flutter memanggil dispose() saat widget di-unmount, tanpa ambiguitas.
+  late final TextEditingController _pin;
+  bool _isPinVisible = false;
+  bool _isVerifying = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _pin = TextEditingController();
+  }
+
+  @override
+  void dispose() {
+    _pin.dispose();
+    super.dispose();
+  }
+
+  Future<void> _verify() async {
+    final pin = _pin.text.trim();
+    if (pin.isEmpty || _isVerifying) return;
+
+    setState(() => _isVerifying = true);
+
+    // Verifikasi: bandingkan hash input dengan Supervisor PIN hash di storage.
+    final inputHash = CryptoHelper.hashPin(pin);
+    final storedHash = LocalStorageService().getSupervisorPinHash();
+    final isValid = storedHash != null && inputHash == storedHash;
+
+    if (!mounted) return;
+    setState(() => _isVerifying = false);
+
+    if (isValid) {
+      Navigator.of(context).pop();
+      widget.onSuccess();
+    } else {
+      widget.onWrongPin();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      backgroundColor: AppColors.surface,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      title: const Row(
+        children: [
+          Icon(Icons.shield_outlined, color: AppColors.snackError, size: 22),
+          SizedBox(width: 8),
+          Text(
+            'Verifikasi Pengawas',
+            style: TextStyle(
+              color: AppColors.textPrimary,
+              fontSize: 17,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ],
+      ),
+      content: TextField(
+        controller: _pin,
+        obscureText: !_isPinVisible,
+        keyboardType: TextInputType.number,
+        autofocus: true,
+        onSubmitted: (_) => _verify(),
+        style: const TextStyle(color: AppColors.textPrimary),
+        decoration: InputDecoration(
+          hintText: 'PIN Pengawas Ruangan',
+          hintStyle: const TextStyle(color: AppColors.textHint, fontSize: 14),
+          suffixIcon: IconButton(
+            icon: Icon(
+              _isPinVisible
+                  ? Icons.visibility_off_outlined
+                  : Icons.visibility_outlined,
+              color: AppColors.textHint,
+              size: 20,
+            ),
+            onPressed: () => setState(() => _isPinVisible = !_isPinVisible),
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text(
+            'Batal',
+            style: TextStyle(color: AppColors.textSecondary),
+          ),
+        ),
+        ElevatedButton(
+          style: ElevatedButton.styleFrom(
+            backgroundColor: AppColors.snackError,
+            foregroundColor: Colors.white,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
+          ),
+          onPressed: _isVerifying ? null : _verify,
+          child: _isVerifying
+              ? const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: Colors.white,
+                  ),
+                )
+              : const Text(
+                  'Verifikasi',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
         ),
       ],
     );

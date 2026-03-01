@@ -172,7 +172,7 @@ router.get('/admin/tokens', (req, res) => {
 router.get('/admin/config', (req, res) => {
     try {
         const config = db
-            .prepare('SELECT moodle_url, admin_pin, exit_pin FROM app_config LIMIT 1')
+            .prepare('SELECT moodle_url, admin_pin, exit_pin, supervisor_pin FROM app_config LIMIT 1')
             .get();
 
         if (!config) {
@@ -191,10 +191,10 @@ router.get('/admin/config', (req, res) => {
 // Body: { moodle_url, admin_pin, exit_pin } — semua opsional (hanya yang ada yang diupdate)
 // =============================================================================
 router.post('/admin/config', (req, res) => {
-    const { moodle_url, admin_pin, exit_pin } = req.body;
+    const { moodle_url, admin_pin, exit_pin, supervisor_pin } = req.body;
 
     // Validasi minimal: setidaknya satu field harus ada
-    if (!moodle_url && !admin_pin && !exit_pin) {
+    if (!moodle_url && !admin_pin && !exit_pin && !supervisor_pin) {
         return res.status(400).json({ success: false, message: 'Tidak ada field yang dikirim.' });
     }
 
@@ -203,11 +203,12 @@ router.post('/admin/config', (req, res) => {
         const count = db.prepare('SELECT COUNT(*) as c FROM app_config').get();
         if (count.c === 0) {
             db.prepare(
-                'INSERT INTO app_config (moodle_url, admin_pin, exit_pin) VALUES (?,?,?)'
+                'INSERT INTO app_config (moodle_url, admin_pin, exit_pin, supervisor_pin) VALUES (?,?,?,?)'
             ).run(
                 moodle_url || 'http://182.253.41.180/login/index.php',
                 admin_pin || '123456',
-                exit_pin || '123456'
+                exit_pin || '123456',
+                supervisor_pin || '123456'
             );
         } else {
             // Update baris yang ada (selalu id=1 / LIMIT 1)
@@ -217,6 +218,7 @@ router.post('/admin/config', (req, res) => {
             if (moodle_url !== undefined) { setClauses.push('moodle_url = ?'); params.push(moodle_url.trim()); }
             if (admin_pin !== undefined) { setClauses.push('admin_pin = ?'); params.push(admin_pin.trim()); }
             if (exit_pin !== undefined) { setClauses.push('exit_pin = ?'); params.push(exit_pin.trim()); }
+            if (supervisor_pin !== undefined) { setClauses.push('supervisor_pin = ?'); params.push(supervisor_pin.trim()); }
 
             db.prepare(`UPDATE app_config SET ${setClauses.join(', ')} WHERE id = 1`)
                 .run(...params);

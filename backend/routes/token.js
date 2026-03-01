@@ -74,7 +74,7 @@ router.post('/api/validate', tokenValidateLimiter, (req, res) => {
         // Token valid dan ujian aktif — izinkan masuk ke Moodle
         // Ambil konfigurasi global (moodle_url, admin_pin, exit_pin) dari app_config
         const config = db
-            .prepare('SELECT moodle_url, admin_pin, exit_pin FROM app_config LIMIT 1')
+            .prepare('SELECT moodle_url, admin_pin, exit_pin, supervisor_pin FROM app_config LIMIT 1')
             .get();
 
         console.log(`[VALIDATE] Token valid & aktif: ${trimmedToken.slice(0, 4)}***`);
@@ -86,6 +86,7 @@ router.post('/api/validate', tokenValidateLimiter, (req, res) => {
             moodle_url: config?.moodle_url ?? null,
             admin_pin: config?.admin_pin ?? null,
             exit_pin: config?.exit_pin ?? null,
+            supervisor_pin: config?.supervisor_pin ?? null,
         });
 
     } catch (err) {

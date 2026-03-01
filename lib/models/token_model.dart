@@ -42,6 +42,11 @@ class TokenResponse {
   /// Null jika ujian belum aktif.
   final String? exitPin;
 
+  /// PIN Pengawas Ruangan dari backend (plain text — SEGERA di-hash sebelum disimpan).
+  /// Digunakan untuk membuka blokir Layar Pelanggaran (Violation Trap).
+  /// Null jika ujian belum aktif.
+  final String? supervisorPin;
+
   const TokenResponse({
     required this.success,
     required this.examActive,
@@ -50,6 +55,7 @@ class TokenResponse {
     this.moodleUrl,
     this.adminPin,
     this.exitPin,
+    this.supervisorPin,
   });
 
   /// Factory constructor untuk mem-parsing JSON response dari backend.
@@ -62,6 +68,7 @@ class TokenResponse {
       moodleUrl: json['moodle_url'] as String?,
       adminPin: json['admin_pin'] as String?,
       exitPin: json['exit_pin'] as String?,
+      supervisorPin: json['supervisor_pin'] as String?,
     );
   }
 

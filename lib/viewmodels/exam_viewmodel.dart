@@ -11,6 +11,8 @@
 // BATASAN P9  : iOS Guided Access Detection → Prioritas 9.
 // =============================================================================
 
+import 'dart:io' show Platform;
+
 import 'package:flutter/material.dart' show Color;
 import 'package:flutter/foundation.dart';
 import 'package:webview_flutter/webview_flutter.dart';
@@ -287,10 +289,30 @@ class ExamViewModel extends ChangeNotifier {
 
     // -------------------------------------------------------------------------
     // Load URL Moodle
-    // Android Lockdown diaktifkan SEBELUM loadRequest agar layar terlindungi
-    // FLAG_SECURE + Kiosk Mode sudah aktif sebelum soal ujian pertama muncul.
+    // Lockdown dipecah menjadi 2 fase untuk menghilangkan Main Thread bottleneck:
+    //
+    //   Fase 1 — enableKioskMode (fire-and-forget, TIDAK di-await):
+    //     Screen Pinning diaktifkan segera tanpa memblokir loadRequest.
+    //     Kiosk Mode tetap aktif sebelum konten Moodle terlihat siswa.
+    //
+    //   Fase 2 — requestBatteryExemption (deferred 1500ms):
+    //     Dialog OS Battery Optimization adalah penyebab utama Skipped 500+ frames.
+    //     Dijalankan SETELAH WebView frame pertama selesai digambar.
     // -------------------------------------------------------------------------
-    await SecurityHelper().enableAndroidLockdown();
+    if (Platform.isAndroid) {
+      // Fase 1: Kiosk Mode — aktifkan segera, tidak perlu tunggu hasilnya.
+      SecurityHelper().enableKioskModeOnly();
+
+      // Fase 2: Battery Exemption — defer agar CPU tidak dipenuhi 2 native call
+      // sekaligus saat WebView sedang merender frame pertama.
+      Future.delayed(const Duration(milliseconds: 1500), () async {
+        try {
+          await SecurityHelper().requestBatteryExemptionOnly();
+        } catch (e) {
+          debugPrint('[EXAM_VM] Deferred battery exemption error: $e');
+        }
+      });
+    }
 
     await controller.loadRequest(Uri.parse(moodleUrl));
 
