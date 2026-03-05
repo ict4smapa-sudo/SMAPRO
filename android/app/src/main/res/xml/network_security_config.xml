@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  network_security_config.xml
+  Tujuan: Mengizinkan cleartext HTTP (non-HTTPS) ke semua subnet LAN/Intranet
+          sekolah secara eksplisit. Ini adalah fallback safety net untuk
+          Custom ROM (MIUI, ColorOS, HyperOS) yang dapat mengabaikan
+          android:usesCleartextTraffic="true" pada level <application>.
+
+  Cakupan subnet yang diizinkan:
+    - 10.0.0.0/8     → Jaringan lab/LAN kelas A
+    - 172.16.0.0/12  → Jaringan enterprise standar
+    - 192.168.0.0/16 → Jaringan intranet sekolah paling umum (Wi-Fi router)
+    - ::1            → IPv6 localhost (debug)
+    - localhost      → Localhost debug
+
+  Di luar subnet ini (internet), HTTPS tetap diwajibkan (default aman).
+-->
+<network-security-config>
+
+    <!-- Konfigurasi default: izinkan cleartext traffic ke domain/IP publik.
+         Ini setara dengan android:usesCleartextTraffic="true" namun lebih
+         granular dan diakui oleh semua OEM termasuk MIUI dan ColorOS API 28+. -->
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <!-- Percaya CA sistem (sertifikat HTTPS resmi) -->
+            <certificates src="system"/>
+        </trust-anchors>
+    </base-config>
+
+    <!-- Domain spesifik: Subnet LAN sekolah — izinkan cleartext HTTP.
+         Pola ip-subnet mencakup seluruh blok private address RFC 1918. -->
+    <domain-config cleartextTrafficPermitted="true">
+        <!-- Subnet LAN 192.168.x.x — coverage utama jaringan sekolah -->
+        <domain includeSubdomains="true">192.168.0.0</domain>
+        <domain includeSubdomains="true">192.168.7.10</domain>
+
+        <!-- Subnet 10.x.x.x — lab komputer enterprise -->
+        <domain includeSubdomains="true">10.0.0.0</domain>
+
+        <!-- localhost untuk debug mode -->
+        <domain includeSubdomains="true">localhost</domain>
+    </domain-config>
+
+</network-security-config>

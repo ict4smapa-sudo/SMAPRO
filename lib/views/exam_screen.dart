@@ -21,6 +21,7 @@ import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
 import '../services/local_storage_service.dart';
+import '../services/security_helper.dart';
 import '../utils/colors.dart';
 import '../utils/crypto_helper.dart';
 import '../utils/routes.dart';
@@ -51,6 +52,18 @@ class _ExamScreenState extends State<ExamScreen> with WidgetsBindingObserver {
   // di-reset ke false saat resumed (kembali ke ujian).
   bool _isHandlingViolation = false;
 
+  // Safe Zone / Grace Period flag — mencegah false-positive violation
+  // saat dialog sistem (Battery Exemption OS) sedang terbuka.
+  // true selama ~5 detik sejak ExamScreen pertama kali dimuat.
+  bool _isSystemDialogOpen = false;
+
+  // Timer 5-detik untuk Grace Window anti-false-positive.
+  // Saat fokus hilang (inactive/paused/onWindowFocusLost), timer dimulai.
+  // Jika siswa kembali (resumed/onWindowFocusGained) sebelum 5 detik,
+  // timer dibatalkan dan TIDAK ada tilang. Hanya fokus hilang > 5 detik
+  // yang mengeksekusi penghitungan pelanggaran.
+  Timer? _violationGraceTimer;
+
   // ---------------------------------------------------------------------------
   // LIFECYCLE
   // ---------------------------------------------------------------------------
@@ -79,11 +92,35 @@ class _ExamScreenState extends State<ExamScreen> with WidgetsBindingObserver {
         'EXAMBRO_DEBUG: Flutter menerima sinyal Native -> ${call.method}',
       );
       if (call.method == 'onWindowFocusLost') {
-        _triggerViolationEvent();
+        // Mulai grace window 5 detik — bukan tilang langsung.
+        _startViolationTimer();
       }
     });
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<ExamViewModel>().initWebView();
+
+      // Grace Period: aktifkan Safe Zone 1 detik setelah frame pertama.
+      // ExamViewModel akan memanggil dialog Battery Exemption ~1.5 detik
+      // setelah initWebView — safe zone harus sudah aktif SEBELUM dialog muncul.
+      // Auto-reset setelah 6 detik (cukup untuk siswa merespons dialog OS).
+      Future.delayed(const Duration(milliseconds: 1000), () {
+        if (!mounted) return;
+        setState(() => _isSystemDialogOpen = true);
+        debugPrint(
+          'EXAMBRO_DEBUG: Safe Zone AKTIF — sensor pelanggaran dibungkam.',
+        );
+        // Battery Exemption dipanggil DI SINI (T+1000ms) agar sensor violation
+        // sudah dalam mode Safe Zone sebelum dialog OS merebut fokus (T+1500ms lama).
+        // Dengan pendekatan ini, sinkronisasi flag dan dialog dijamin akurat.
+        SecurityHelper().requestBatteryExemptionOnly();
+        Future.delayed(const Duration(milliseconds: 5000), () {
+          if (!mounted) return;
+          setState(() => _isSystemDialogOpen = false);
+          debugPrint(
+            'EXAMBRO_DEBUG: Safe Zone NON-AKTIF — sensor pelanggaran aktif kembali.',
+          );
+        });
+      });
     });
   }
 
@@ -94,6 +131,8 @@ class _ExamScreenState extends State<ExamScreen> with WidgetsBindingObserver {
     // Kembalikan UI OS ke normal (edge-to-edge) saat ExamScreen di-unmount.
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     WakelockPlus.disable();
+    // Batalkan timer grace window agar tidak fire setelah widget di-dispose.
+    _violationGraceTimer?.cancel();
     super.dispose();
   }
 
@@ -106,12 +145,18 @@ class _ExamScreenState extends State<ExamScreen> with WidgetsBindingObserver {
     debugPrint('EXAMBRO_DEBUG: Flutter AppLifecycle berubah menjadi -> $state');
     // Jaring diperluas: tangkap paused (keluar app) DAN inactive
     // (Floating Apps, Split Screen, status bar ditarik, telepon masuk).
+    // Tidak langsung menilang — mulai grace window 5 detik terlebih dahulu.
     if (state == AppLifecycleState.paused ||
         state == AppLifecycleState.inactive) {
-      _triggerViolationEvent();
+      _startViolationTimer();
     } else if (state == AppLifecycleState.resumed) {
-      // Siswa kembali fokus ke ujian → buka kunci debounce
+      // Siswa kembali sebelum 5 detik → batalkan tilang (pop-up sepele).
+      _cancelViolationTimer();
+      // Buka kunci debounce dan safe zone.
       _isHandlingViolation = false;
+      // Jika resumed disebabkan oleh dialog OS selesai (Battery Exemption),
+      // pastikan safe zone juga ikut direset agar tidak tertinggal.
+      _isSystemDialogOpen = false;
 
       // Baca count terbaru dari storage (sync, _prefs sudah init).
       final count = LocalStorageService().getViolationCount();
@@ -153,6 +198,40 @@ class _ExamScreenState extends State<ExamScreen> with WidgetsBindingObserver {
   }
 
   // ---------------------------------------------------------------------------
+  // VIOLATION TRAP — Grace Window Timer Controls
+  // ---------------------------------------------------------------------------
+
+  /// Memulai grace window 5 detik saat fokus pertama kali hilang.
+  ///
+  /// Jika timer sudah berjalan atau Safe Zone (dialog sistem awal) aktif,
+  /// sinyal diabaikan untuk mencegah double-count.
+  /// Grace window memberi toleransi bagi pop-up sepele (baterai lemah,
+  /// alarm, panggilan masuk) yang selesai dalam < 5 detik.
+  void _startViolationTimer() {
+    if ((_violationGraceTimer?.isActive ?? false) || _isSystemDialogOpen) {
+      debugPrint(
+        'EXAMBRO_DEBUG: Timer abaikan — sudah berjalan / Safe Zone aktif.',
+      );
+      return;
+    }
+    debugPrint('EXAMBRO_DEBUG: Fokus hilang. Memulai toleransi 5 detik...');
+    _violationGraceTimer = Timer(const Duration(seconds: 5), () {
+      debugPrint('EXAMBRO_DEBUG: Waktu toleransi habis! Mengeksekusi tilang.');
+      _triggerViolationEvent();
+    });
+  }
+
+  /// Membatalkan grace window jika siswa kembali dalam < 5 detik.
+  ///
+  /// Dipanggil saat AppLifecycleState.resumed atau onWindowFocusGained.
+  void _cancelViolationTimer() {
+    if (_violationGraceTimer?.isActive ?? false) {
+      _violationGraceTimer!.cancel();
+      debugPrint('EXAMBRO_DEBUG: Fokus kembali. Tilang dibatalkan (Aman).');
+    }
+  }
+
+  // ---------------------------------------------------------------------------
   // UI HELPERS — Violation Event Trigger (Modular)
   // ---------------------------------------------------------------------------
 
@@ -164,8 +243,17 @@ class _ExamScreenState extends State<ExamScreen> with WidgetsBindingObserver {
   /// saat dua sumber menembak secara bersamaan (mis. inactive lalu paused).
   void _triggerViolationEvent() {
     debugPrint(
-      'EXAMBRO_DEBUG: _triggerViolationEvent dieksekusi! Count: $_violationCount, isHandling: $_isHandlingViolation',
+      'EXAMBRO_DEBUG: _triggerViolationEvent dieksekusi! Count: $_violationCount, isHandling: $_isHandlingViolation, safeZone: $_isSystemDialogOpen',
     );
+    // Safe Zone: abaikan sinyal pelanggaran jika dialog sistem sedang terbuka.
+    // Ini mencegah false-positive akibat dialog Battery Exemption OS yang
+    // secara sementara merebut fokus saat pertama kali ExamScreen dimuat.
+    if (_isSystemDialogOpen) {
+      debugPrint(
+        'EXAMBRO_DEBUG: Sinyal diabaikan — Safe Zone aktif (dialog sistem).',
+      );
+      return;
+    }
     if (!mounted || _violationCount >= 3 || _isHandlingViolation) return;
     _isHandlingViolation = true;
     LocalStorageService().incrementViolationCount();

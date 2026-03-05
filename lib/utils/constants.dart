@@ -74,7 +74,8 @@ class AppConstants {
   /// URL default endpoint validasi token.
   /// Digunakan sebagai fallback jika admin belum mengisi API URL via AdminScreen.
   /// Ganti IP ini sebelum release build ke jaringan sekolah.
-  static const String defaultApiUrl = 'http://192.168.0.7:3000/api/validate';
+  static const String defaultApiUrl = 'http://192.168.7.10:3001/api/validate';
+  // static const String defaultApiUrl = 'http://192.168.0.7:3000/api/validate';
 
   /// URL default server Moodle.
   /// Digunakan sebagai fallback jika belum ada URL dari response server.

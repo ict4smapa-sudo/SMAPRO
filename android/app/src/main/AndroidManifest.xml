@@ -1,12 +1,32 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-    <!-- Mencegah OS (MIUI/HyperOS/ColorOS) mematikan paksa proses WebView ujian -->
+    <!-- =========================================================== -->
+    <!-- NETWORK PERMISSIONS                                         -->
+    <!-- =========================================================== -->
+    <!-- KRITIS: Wajib ada agar HTTP request ke server lokal bekerja -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Digunakan untuk mengecek status koneksi LAN sebelum API call  -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- Diperlukan beberapa Custom ROM (MIUI/ColorOS) agar bisa      -->
+    <!-- membaca status koneksi Wi-Fi dan IP lokal LAN dengan benar.  -->
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+
+    <!-- =========================================================== -->
+    <!-- POWER / DEVICE PERMISSIONS                                  -->
+    <!-- =========================================================== -->
+    <!-- Mencegah OS (MIUI/HyperOS/ColorOS) mematikan paksa proses   -->
+    <!-- WebView ujian. Dideklarasikan eksplisit karena beberapa OEM  -->
+    <!-- mengabaikan auto-merge dari plugin wakelock_plus.            -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <!-- Meminta OS untuk mengabaikan Battery Optimization agar proses-->
+    <!-- tidak di-kill paksa di background (terutama Xiaomi MIUI).    -->
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS"/>
 
     <application
         android:label="Exambro SMAN 4 Jember"
         android:name="${applicationName}"
         android:icon="@mipmap/launcher_icon"
-        android:usesCleartextTraffic="true">
+        android:usesCleartextTraffic="true"
+        android:networkSecurityConfig="@xml/network_security_config">
         <activity
             android:name=".MainActivity"
             android:exported="true"
@@ -47,4 +67,6 @@
             <data android:mimeType="text/plain"/>
         </intent>
     </queries>
+
 </manifest>
+

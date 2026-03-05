@@ -258,7 +258,64 @@ class ExamViewModel extends ChangeNotifier {
           );
 
           // -----------------------------------------------------------------
-          // GRACEFUL ERROR HANDLING — PRD Network Error
+          // URL MASKING — Security Fix (Information Disclosure Prevention)
+          // Halaman error native WebView mengekspos URL Moodle asli.
+          // Ganti dengan HTML lokal yang tidak memuat informasi apapun
+          // sebelum memberi tahu ViewModel (dan UI) bahwa error terjadi.
+          // -----------------------------------------------------------------
+          if (error.isForMainFrame == true) {
+            // Pesan yang aman ditampilkan ke siswa — tanpa URL, tanpa kode error.
+            const safeErrorHtml = '''
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Koneksi Bermasalah</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: #121212;
+      color: #e0e0e0;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      padding: 32px;
+    }
+    .card {
+      text-align: center;
+      max-width: 360px;
+    }
+    .icon { font-size: 64px; margin-bottom: 24px; }
+    h1 {
+      font-size: 20px;
+      font-weight: 700;
+      color: #ff6b6b;
+      margin-bottom: 12px;
+    }
+    p {
+      font-size: 14px;
+      line-height: 1.6;
+      color: #9e9e9e;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="icon">📡</div>
+    <h1>Koneksi Terputus</h1>
+    <p>Pastikan perangkat terhubung ke jaringan Wi-Fi ujian yang benar,<br>
+       lalu tekan tombol <strong>Refresh</strong> di bawah.</p>
+  </div>
+</body>
+</html>''';
+            controller.loadHtmlString(safeErrorHtml);
+          }
+
+          // -----------------------------------------------------------------
+          // GRACEFUL ERROR HANDLING — Notifikasi ke UI via SnackBar
           // Hanya tangkap error di main frame (bukan sub-resource seperti
           // gambar atau script yang gagal dimuat di iframe).
           // Error sub-frame diabaikan agar tidak spam SnackBar.
@@ -268,18 +325,19 @@ class ExamViewModel extends ChangeNotifier {
           // Kode error jaringan standar Android WebView (WebViewClient):
           //   -2  → ERROR_HOST_LOOKUP (DNS gagal / Wi-Fi putus)
           //   -6  → ERROR_CONNECT (koneksi ditolak / server mati)
+          //   -7  → ERROR_IO (I/O error generik)
           //   -8  → ERROR_TIMEOUT (koneksi timeout)
           //   -15 → ERROR_FAILED_SSL_HANDSHAKE (SSL error)
-          const networkErrorCodes = [-2, -6, -8, -15];
+          //   -21 → ERROR_TOO_MANY_REQUESTS (429 rate limit)
+          const networkErrorCodes = [-2, -6, -7, -8, -15, -21];
           final isNetworkError = networkErrorCodes.contains(error.errorCode);
 
           if (isNetworkError) {
             _blockedMessage = 'Koneksi terputus. Silakan tekan tombol Refresh.';
           } else {
-            // Error non-jaringan (contoh: resource tertentu gagal) —
-            // tampilkan pesan generik agar siswa tahu dan bisa retry.
-            _blockedMessage =
-                'Halaman gagal dimuat (${error.errorCode}). Coba Refresh.';
+            // Error non-jaringan — tampilkan pesan generik tanpa kode error
+            // (kode error tidak boleh terekspos ke siswa).
+            _blockedMessage = 'Halaman gagal dimuat. Coba Refresh.';
           }
 
           notifyListeners();
@@ -289,29 +347,15 @@ class ExamViewModel extends ChangeNotifier {
 
     // -------------------------------------------------------------------------
     // Load URL Moodle
-    // Lockdown dipecah menjadi 2 fase untuk menghilangkan Main Thread bottleneck:
+    // Kiosk Mode diaktifkan segera (fire-and-forget) sebelum loadRequest.
+    // FLAG_SECURE + startLockTask() aktif sebelum konten Moodle terlihat siswa.
     //
-    //   Fase 1 — enableKioskMode (fire-and-forget, TIDAK di-await):
-    //     Screen Pinning diaktifkan segera tanpa memblokir loadRequest.
-    //     Kiosk Mode tetap aktif sebelum konten Moodle terlihat siswa.
-    //
-    //   Fase 2 — requestBatteryExemption (deferred 1500ms):
-    //     Dialog OS Battery Optimization adalah penyebab utama Skipped 500+ frames.
-    //     Dijalankan SETELAH WebView frame pertama selesai digambar.
+    // CATATAN: requestBatteryExemption DIPINDAHKAN ke ExamScreen.initState
+    // agar dapat dikontrol bersama flag grace period (_isSystemDialogOpen).
     // -------------------------------------------------------------------------
     if (Platform.isAndroid) {
-      // Fase 1: Kiosk Mode — aktifkan segera, tidak perlu tunggu hasilnya.
+      // Kiosk Mode — aktifkan segera, tidak perlu tunggu hasilnya.
       SecurityHelper().enableKioskModeOnly();
-
-      // Fase 2: Battery Exemption — defer agar CPU tidak dipenuhi 2 native call
-      // sekaligus saat WebView sedang merender frame pertama.
-      Future.delayed(const Duration(milliseconds: 1500), () async {
-        try {
-          await SecurityHelper().requestBatteryExemptionOnly();
-        } catch (e) {
-          debugPrint('[EXAM_VM] Deferred battery exemption error: $e');
-        }
-      });
     }
 
     await controller.loadRequest(Uri.parse(moodleUrl));

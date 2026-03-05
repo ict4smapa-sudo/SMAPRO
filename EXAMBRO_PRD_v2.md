@@ -10,8 +10,8 @@
 
 **Objektif Utama:** Memberikan lingkungan ujian digital (ujian CBT) yang *lockdown* dan tersentralisasi bagi siswa SMAN 4 Jember, memastikan integritas ujian dari percobaan penyontekan melalui perangkat gawai. 
 
-**Arsitektur 'Satu Pintu' (Centralized Configuration):** 
-Seluruh konfigurasi inti seperti *Moodle URL*, *Admin PIN*, dan *Exit PIN* dikendalikan penuh dari satu pintu (Database Backend SQLite lokal). Pendekatan ini memudahkan panitia ujian karena ketika ada perubahan alamat IP server CBT atau reset PIN pengawas, siswa tidak perlu memperbarui aplikasi di gawai mereka; konfigurasi langsung disinkronkan dan tersalurkan saat validasi token API.
+**Arsitektur 'Satu Pintu' (Centralized Configuration) & Separation of Duty:** 
+Seluruh konfigurasi inti dikendalikan penuh dari satu pintu (Database Backend SQLite lokal). Sistem kini menggunakan arsitektur Separation of Duty (Pemisahan Peran) 3-PIN: **Admin PIN** (Superuser/Settings), **Supervisor PIN** (Pengawas/Unblock), dan **Exit PIN** (Siswa keluar). Pendekatan ini memudahkan panitia ujian karena ketika ada perubahan alamat IP server CBT atau reset PIN pengawas, siswa tidak perlu memperbarui aplikasi di gawai mereka; konfigurasi langsung disinkronkan dan tersalurkan saat validasi token API.
 
 ---
 
@@ -40,7 +40,7 @@ Seluruh konfigurasi inti seperti *Moodle URL*, *Admin PIN*, dan *Exit PIN* diken
    * Siswa memasukkan Token di `LoginScreen`. Aplikasi mengirimkan POST request ke `/api/validate`.
    * Node.js mencocokkan di tabel `tokens`. Jika valid dan `exam_active=1`, backend membalas HTTP 200 beserta konfigurasi Moodle URL dan PIN admin & exit dari tabel `app_config`.
 3. **Konfigurasi Lokal Sinkron:** Flutter App menyimpan Moodle URL dan PIN tersinkron ke `LocalStorageService` untuk mencegah putusnya sesi saat offline sesaat.
-4. **Native Hardware Control:** Menghindari *dependency* eksternal yang rentan batas API, aplikasi memanggil platform channel `id.sman4jember.exambro/kiosk` untuk mengunci OS (*App Pinning* / Guided Access) dan OS diseting *Wakelock* sebelum transisi ke UI.
+4. **Native Hardware Control & Main Thread Optimization:** Menghindari *dependency* eksternal yang rentan batas API, aplikasi memanggil platform channel `id.sman4jember.exambro/kiosk` untuk mengunci OS (*App Pinning* / Guided Access) dan OS diseting *Wakelock* sebelum transisi ke UI. Pemanggilan Kiosk Mode dan WebView berjalan paralel, namun Battery Exemption dialog ditunda (deferred) selama 1.5 detik via `addPostFrameCallback` untuk mencegah kemacetan CPU (Skipped frames) pada gawai low-end (Deferred Native Calls).
 5. **WebView Render:** State berpindah ke `ExamScreen`. Controller Moodle WebView diload fullscreen memanggil URL Moodle yang diterima dari API. Interaksi WebView terkunci (pop-up diblokir, navigasi diintersep oleh `NavigationDelegate`).
 6. **Session End & Strict Isolation:** Verifikasi *Exit PIN* via dialog memanggil POST `/api/verify-exit` (Validasi Live/Fallback hash lokal). Setelah *success*, aplikasi menghentikan Kiosk Mode, lalu menjalankan pembersihan 4 Lapis Penuh secara *await* (Cookies Moodle, HTTP Cache, LocalStorage Native, dan Storage JavaScript) untuk jaminan *zero-leak session* sebelum me-return siswa ke Login.
 
@@ -50,7 +50,7 @@ Seluruh konfigurasi inti seperti *Moodle URL*, *Admin PIN*, dan *Exit PIN* diken
 
 ### **Backend Core Features**
 - **Manajemen Token (CRUD):** Kemampuan mengelola akses siswa melalui tabel `tokens`. Validasi ini memeriksa integritas token beserta flag aktif `exam_active` untuk menentukan izin masuk siswa.
-- **Konfigurasi Global (Satu Pintu):** Modul App Config di backend menyimpan URL Moodle (Target Server Exam), Admin PIN, dan Exit PIN secara tersentral. 
+- **Konfigurasi Global (Satu Pintu):** Modul App Config di backend menyimpan URL Moodle (Target Server Exam), Admin PIN, Supervisor PIN, dan Exit PIN secara tersentral. Pembaruan UI Admin Panel diformat menjadi Grid 2x2 yang responsif untuk mengakomodasi konfigurasi Supervisor PIN ini. 
 - **Custom Login Cookie Auth:** Sistem panel admin (`/admin`) dilindungi oleh otentikasi berbasis HTTP-Only cookies (`exambro_admin_auth`). Murni tanpa dependency tambahan layaknya JWT yang bersifat stateless, mempermudah revokasi akses.
 - **Rate-limiter:** API membatasi akses klien secara adaptif (Maks 5 request per IP per menit) khusus di rute `/api/validate` untuk mitigasi serangan DDOS mini dari siswa.
 
@@ -59,6 +59,8 @@ Seluruh konfigurasi inti seperti *Moodle URL*, *Admin PIN*, dan *Exit PIN* diken
 - **Custom Header Ujian & Micro-State Management:** Menggantikan status bar native OS. Memiliki indikator jam *real-time*, status baterai presisi, dan kontrol navigasi. Melalui arsitektur *Micro-State* terkini, rebuild keseluruhan UI dicegah dengan pemanfaatan `ValueNotifier` dan `ValueListenableBuilder`. Ini memastikan hanya piksel teks jam dan baterai yang terre-paint setiap detiknya, menghemat drastis siklus CPU/RAM pada gawai *low-end*.
 - **Graceful Error Handling:** Intersepsi kegagalan navigasi secara diam-diam. Jika Moodle Controller menembakkan error `-2` (DNS Down) atau `-6` (Server Mati), aplikasi memblokir UI *"Web Page not Available"* bawaan browser dan memberikan feedback elegan *"Koneksi terputus. Silakan tekan tombol Refresh"* berbentuk SnackBar.
 - **Fallback Storage:** Jika terjadi *network drop* pada akses Live Server Verification, aplikasi secara pasif mendukung validasi PIN secara offline melalui pencocokan kriptografi lokal (*local hash verification*).
+- **Persistent Violation Trap (Sistem Tilang Permanen):** Penggunaan `SharedPreferences` asinkron pada Login Screen (`FutureBuilder`) dan Exam Screen berfungsi mengunci perangkat siswa yang curang. Perangkat akan tetap terkunci pada layar pelanggaran meskipun aplikasi di-force close.
+- **3-Strike Policy:** Sistem memberikan 2 kali peringatan pop-up saat siswa mencoba keluar aplikasi secara paksa, dan menjatuhkan sanksi Layar Merah Banned pada pelanggaran ke-3.
 
 ---
 
@@ -68,6 +70,8 @@ Aplikasi ini dipersenjatai dengan fitur *lockdown* dan mitigasi manipulasi yang 
 
 ### **Native OS Security (Android & iOS)**
 - **Native App Pinning (Android):** Kontrol `Kiosk Mode` diimplementasikan murni via jembatan panggilan Kotlin API terendah (`startLockTask()` & `stopLockTask()`) melalui channel `id.sman4jember.exambro/kiosk`. Siswa tidak bisa menekan tombol `Home`, `Recent`, atau `System Back` untuk mensuspend layar utama Moodle.
+- **Ultimate Anti-Cheat (Anti-Floating Apps):** Pertahanan dua lapis. Lapis 1: Native Overlay Blocker (`setHideOverlayWindows`) untuk Android 12+. Lapis 2: Native Window Focus Observer (`onWindowFocusChanged` -> `MethodChannel`) untuk mendeteksi hilangnya fokus ke aplikasi mengambang di Android lawas.
+- **Immersive Sticky Mode:** Menyembunyikan paksa Status Bar dan Navigation Bar OS saat ujian berlangsung.
 - **Guided Access Awareness (iOS):** Deteksi mode ujian perangkat Apple terintegrasi kuat ke dalam Swift `UIAccessibility.isGuidedAccessEnabled` MethodChannel. Siswa iOS diwajibkan menyalakan sakelar akses panduan sebelum layar merender server UNBK.
 - **Screen Wakelock:** Modul yang bekerja sebagai wakil OS mencegah `Sleep`/`Doze` mode atau penggelapan layar. Ini krusial agar memori Chrome `WebView` tidak tertidur dan mengakibatkan terputusnya koneksi Web Socket ke *Node.js Backend* saat ada ujian esai panjang.
 - **Anti-Screenshot / Screen Record:** Deklarasi *native protection* melalui pemanggilan fungsi Kotlin (`window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)`) pada siklus `onCreate` di `MainActivity.kt`. Hal ini mengamankan *preview app* dari mode *Recent Apps*, *Screen casting/Miracast*, maupun pengambilam *Screenshot* OS.
@@ -81,10 +85,10 @@ Aplikasi ini dipersenjatai dengan fitur *lockdown* dan mitigasi manipulasi yang 
 
 ---
 
-## 5. Phase 2 Roadmap (Future Enhancements)
+## 5. Phase 3 Roadmap (Enterprise Scalability)
 
-Konfigurasi dan kapabilitas CBT saat ini sudah dinyatakan **Pre-Release State (Stable)**. Seluruh rekomendasi performa Fase 1 (Micro-State, Graceful Fallback, dan iOS Native Bridges) telah diakuisisi penuh di *codebase* utama.
-Guna mematangkan daya saing platform dan meningkatkan manajemen terpusat panitia SMAN 4 Jember di masa depan, berikut rancangan 3 target arsitektur spesifik untuk "Iterasi Fase 2":
+Konfigurasi dan kapabilitas CBT saat ini sudah dinyatakan **Release Candidate**. Seluruh rekomendasi keamanan dan performa (Micro-State, Graceful Fallback, iOS Native Bridges, Persistent Violation Trap, dan Anti-Floating Apps) telah diakuisisi penuh di *codebase* utama.
+Guna mematangkan daya saing platform dan meningkatkan manajemen terpusat panitia SMAN 4 Jember di masa depan, berikut rancangan 3 target arsitektur spesifik untuk "Iterasi Fase 3":
 
 1. **Root & Jailbreak Detection (Native Integrity)**: 
    Pengecekan modifikasi OS level kerucut (*system/bin/su* pada Android dan Cydia injection pada iOS) yang dieksekusi secara asinkron di saat `SplashScreen`. Jika API `SafetyNet` OS mendapati gawai dimodifikasi, UI secara keras akan memberikan banner pemblokiran ujian permanen bagi perangkat yang tidak valid.
