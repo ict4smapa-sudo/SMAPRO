@@ -17,6 +17,8 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
+import 'package:package_info_plus/package_info_plus.dart';
+
 import '../services/api_client.dart';
 import '../services/local_storage_service.dart';
 import '../services/logger_service.dart';
@@ -90,6 +92,19 @@ class LoginViewModel extends ChangeNotifier {
   Timer? _tapResetTimer;
 
   // ---------------------------------------------------------------------------
+  // STATE — OTA Update
+  // ---------------------------------------------------------------------------
+
+  /// True jika versi yang ter-install lebih rendah dari min_required_version.
+  bool isUpdateRequired = false;
+
+  /// Pesan update yang akan ditampilkan di blocking UI.
+  String updateMessage = '';
+
+  /// URL unduhan APK versi terbaru (absolut, sudah mengandung IP server).
+  String apkDownloadUrl = '';
+
+  // ---------------------------------------------------------------------------
   // PUBLIC METHODS — Token Submission
   // ---------------------------------------------------------------------------
 
@@ -97,9 +112,10 @@ class LoginViewModel extends ChangeNotifier {
   ///
   /// Alur sesuai PRD Section 4.2:
   ///   1. Validasi input tidak boleh kosong
-  ///   2. Set state = loading
-  ///   3. Kirim POST ke URL API (dari LocalStorageService)
-  ///   4. Tangani setiap kasus response dengan state yang sesuai
+  ///   2. Cek versi OTA — jika update wajib, blokir dan kembalikan lebih awal
+  ///   3. Set state = loading
+  ///   4. Kirim POST ke URL API (dari LocalStorageService)
+  ///   5. Tangani setiap kasus response dengan state yang sesuai
   ///
   /// UI bereaksi terhadap perubahan [submitStatus] dan [errorMessage].
   Future<void> submitToken(String token) async {
@@ -112,6 +128,10 @@ class LoginViewModel extends ChangeNotifier {
     // Gunakan URL dari storage; fallback ke defaultApiUrl hardcoded jika belum dikonfigurasi.
     // Ini memungkinkan aplikasi bekerja langsung tanpa konfigurasi manual via AdminScreen.
     final apiUrl = _storage.getApiValidateUrl();
+
+    // Cek versi OTA sebelum submit — non-blocking jika API tidak tersedia
+    await checkAppVersion(apiUrl);
+    if (isUpdateRequired) return; // UI sudah bereaksi via notifyListeners()
 
     _submitStatus = SubmitStatus.loading;
     _errorMessage = null;
@@ -199,6 +219,71 @@ class LoginViewModel extends ChangeNotifier {
     _submitStatus = SubmitStatus.idle;
     _errorMessage = null;
     notifyListeners();
+  }
+
+  // ---------------------------------------------------------------------------
+  // PUBLIC METHODS — OTA Update
+  // ---------------------------------------------------------------------------
+
+  /// Mengecek versi aplikasi ke endpoint /api/version.
+  ///
+  /// Safe by design: timeout 5 detik, tangkap semua exception.
+  /// Jika offline / timeout / error format — lanjut ke Login Normal (tidak memblokir).
+  Future<void> checkAppVersion(String currentApiUrl) async {
+    try {
+      // Ganti /validate menjadi /version
+      final versionUrl = currentApiUrl.replaceAll('/validate', '/version');
+      final response = await http
+          .get(Uri.parse(versionUrl))
+          .timeout(const Duration(seconds: 5));
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        if (data['success'] == true) {
+          final minRequiredVersion = data['min_required_version'] as String;
+          final downloadPath = data['download_url'] as String;
+
+          // Ekstrak Base IP dari API URL (Mencegah Hardcode IP)
+          final uri = Uri.parse(currentApiUrl);
+          final baseUrl = '${uri.scheme}://${uri.authority}';
+
+          final packageInfo = await PackageInfo.fromPlatform();
+          final currentVersion = packageInfo.version;
+
+          if (_isVersionLower(currentVersion, minRequiredVersion)) {
+            isUpdateRequired = true;
+            updateMessage =
+                (data['message'] as String?) ??
+                'Versi aplikasi usang. Perbarui sekarang.';
+            apkDownloadUrl = baseUrl + downloadPath;
+            notifyListeners();
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint(
+        'EXAMBRO_DEBUG: Cek OTA gagal (Offline/Timeout). '
+        'Lanjut ke Login Normal. Error: $e',
+      );
+    }
+  }
+
+  /// Membandingkan dua string versi semantic (misal "1.0.0" vs "1.1.0").
+  ///
+  /// Mengembalikan true jika [current] lebih rendah dari [minRequired].
+  /// Fallback false jika format string tidak valid.
+  bool _isVersionLower(String current, String minRequired) {
+    try {
+      final currParts = current.split('.').map(int.parse).toList();
+      final minParts = minRequired.split('.').map(int.parse).toList();
+      for (int i = 0; i < minParts.length; i++) {
+        final c = i < currParts.length ? currParts[i] : 0;
+        if (c < minParts[i]) return true;
+        if (c > minParts[i]) return false;
+      }
+      return false;
+    } catch (e) {
+      return false; // Jika format salah, abaikan update
+    }
   }
 
   // ---------------------------------------------------------------------------

@@ -77,20 +77,14 @@ class _SplashScreenState extends State<SplashScreen> {
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                // Logo sekolah — placeholder icon hingga asset logo asli tersedia.
-                // Saat Prioritas 2 selesai, ganti dengan Image.asset(...) logo SMAN 4 Jember.
-                Container(
-                  width: 120,
-                  height: 120,
-                  decoration: BoxDecoration(
-                    color: AppColors.surface,
-                    borderRadius: BorderRadius.circular(24),
-                  ),
-                  child: const Icon(
-                    Icons.school_rounded,
-                    size: 72,
-                    color: AppColors.accent,
-                  ),
+                // Logo sekolah SMAN 4 Jember — dari assets resmi.
+                Image.asset(
+                  'assets/images/logo_smapa.png',
+                  width: 150,
+                  height: 150,
+                  fit: BoxFit.contain,
+                  errorBuilder: (context, error, stackTrace) =>
+                      const Icon(Icons.school, size: 100, color: Colors.blue),
                 ),
 
                 const SizedBox(height: 40),

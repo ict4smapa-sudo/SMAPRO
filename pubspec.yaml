@@ -2,7 +2,7 @@ name: exambro_sman4jember
 description: "Exambro SMAN 4 Jember — Mobile Exam Browser berbasis Flutter. Wrapper aman menuju LMS Moodle lokal dengan fitur kiosk/lockdown mode."
 publish_to: 'none'
 
-version: 2.0.0+1
+version: 1.0.0+1
 
 environment:
   sdk: ^3.11.0
@@ -39,6 +39,12 @@ dependencies:
 
   # Hashing SHA-256 untuk PIN admin (DILARANG simpan plain text)
   crypto: ^3.0.3
+
+  # OTA Update — buka browser/intent unduhan APK versi baru
+  url_launcher: ^6.3.1
+
+  # OTA Update — baca versi aplikasi yang ter-install di perangkat
+  package_info_plus: ^8.1.2
 
 
 dev_dependencies:

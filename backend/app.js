@@ -36,6 +36,9 @@ app.use(express.urlencoded({ extended: false }));
 // =============================================================================
 app.use('/assets', express.static(path.join(__dirname, '../assets')));
 
+// Ekspos folder downloads/ untuk file APK OTA Update
+app.use('/downloads', express.static(path.join(__dirname, '../downloads')));
+
 // Log setiap request yang masuk (ringkas, untuk monitoring di PM2 logs)
 app.use((req, res, next) => {
     const ts = new Date().toISOString().replace('T', ' ').slice(0, 19);
@@ -94,13 +97,27 @@ app.get('/logout', (req, res) => {
 app.use('/', adminRoutes);
 
 // =============================================================================
+// OTA UPDATE API — Cek versi aplikasi terbaru
+// =============================================================================
+app.get('/api/version', (req, res) => {
+    res.status(200).json({
+        success: true,
+        latest_version: '1.0.0', // Ganti angka ini jika ada rilis APK baru
+        min_required_version: '1.0.0', // Versi minimal yang wajib diinstal siswa
+        download_url: '/downloads/exambro-smapa-latest.apk', // Path relatif
+        maintenance_mode: false,
+        message: 'Versi terbaru tersedia. Wajib perbarui aplikasi untuk melanjutkan ujian.'
+    });
+});
+
+// =============================================================================
 // HEALTH CHECK — digunakan oleh PM2 / monitoring untuk verifikasi server UP
 // =============================================================================
 app.get('/health', (req, res) => {
     res.status(200).json({
         status: 'ok',
         app: 'Exambro SMAN 4 Jember Backend',
-        version: '2.0.0',
+        version: '1.0.0',
         timestamp: new Date().toISOString(),
     });
 });
@@ -132,7 +149,7 @@ const PORT = process.env.PORT || 3001;
 
 app.listen(PORT, '0.0.0.0', () => {
     console.log('='.repeat(60));
-    console.log(` Exambro Backend v2.0 — SMAN 4 Jember`);
+    console.log(` Exambro Backend v1.0.0 — SMAN 4 Jember`);
     console.log(` Server berjalan di: http://0.0.0.0:${PORT}`);
     console.log(` Admin panel      : http://0.0.0.0:${PORT}/admin`);
     console.log(` Health check     : http://0.0.0.0:${PORT}/health`);

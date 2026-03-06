@@ -12,6 +12,7 @@
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../services/local_storage_service.dart';
 import '../utils/colors.dart';
@@ -177,6 +178,95 @@ class _LoginScreenState extends State<LoginScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final vm = context.watch<LoginViewModel>();
+
+    // -------------------------------------------------------------------------
+    // OTA UPDATE GATE
+    // Tampil jika versi aplikasi lebih rendah dari min_required_version server.
+    // Siswa TIDAK dapat login sampai mengunduh dan menginstal versi terbaru.
+    // -------------------------------------------------------------------------
+    if (vm.isUpdateRequired) {
+      return PopScope(
+        canPop: false, // Blokir tombol kembali perangkat
+        child: Scaffold(
+          backgroundColor: AppColors.background,
+          body: SafeArea(
+            child: Center(
+              child: Container(
+                padding: const EdgeInsets.all(24.0),
+                margin: const EdgeInsets.symmetric(horizontal: 20),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(16),
+                  boxShadow: const [
+                    BoxShadow(color: Colors.black26, blurRadius: 10),
+                  ],
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(
+                      Icons.system_update_rounded,
+                      size: 80,
+                      color: Colors.blueAccent,
+                    ),
+                    const SizedBox(height: 16),
+                    const Text(
+                      'Pembaruan Wajib',
+                      style: TextStyle(
+                        fontSize: 22,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.red,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      vm.updateMessage,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        fontSize: 16,
+                        color: Colors.black87,
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+                    SizedBox(
+                      width: double.infinity,
+                      height: 50,
+                      child: ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.blueAccent,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                        ),
+                        onPressed: () async {
+                          final Uri url = Uri.parse(vm.apkDownloadUrl);
+                          if (await canLaunchUrl(url)) {
+                            await launchUrl(
+                              url,
+                              mode: LaunchMode.externalApplication,
+                            );
+                          }
+                        },
+                        child: const Text(
+                          'Unduh Pembaruan Sekarang',
+                          style: TextStyle(
+                            fontSize: 16,
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
     // -------------------------------------------------------------------------
     // DEVICE BANNED GATE
     // Tampil jika perangkat memiliki flag pelanggaran permanen di storage.
